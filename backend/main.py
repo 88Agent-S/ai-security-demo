@@ -42,7 +42,7 @@ SYSTEM_PROMPT = (
 
 PRISMA_AIRS_API_KEY = os.getenv("PRISMA_AIRS_API_KEY")
 PRISMA_AIRS_PROFILE = os.getenv("PRISMA_AIRS_PROFILE", "mac-mini-apisec")
-PRISMA_AIRS_ENDPOINT = os.getenv("PRISMA_AIRS_ENDPOINT", "https://service.api.aisecurity.paloaltonetworks.com")
+PRISMA_AIRS_ENDPOINT = os.getenv("PRISMA_AIRS_ENDPOINT", "https://service.api.aisecurity.paloaltonetworks.com/v1/scan/sync/request")
 
 
 async def scan_with_airs(prompt: str, response: str = "") -> dict:
@@ -59,7 +59,7 @@ async def scan_with_airs(prompt: str, response: str = "") -> dict:
     try:
         async with httpx.AsyncClient() as client:
             r = await client.post(
-                f"{PRISMA_AIRS_ENDPOINT}/v1/scan",
+                PRISMA_AIRS_ENDPOINT,
                 json=payload,
                 headers={
                     "x-pan-token": PRISMA_AIRS_API_KEY,
