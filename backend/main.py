@@ -31,7 +31,7 @@ secure_headers = secure.Secure(
 )
 
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
-MODEL = "llama3.1:8b"
+MODEL = "dolphin-llama3:8b"
 MAX_INPUT_LENGTH = 4000
 SYSTEM_PROMPT = (
     "You are a helpful AI assistant used in a security demonstration platform. "

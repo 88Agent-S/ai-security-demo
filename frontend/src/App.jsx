@@ -62,7 +62,7 @@ function App() {
           <h1>AI Security Demo Platform</h1>
           <span className="header-tagline">DISCOVER. FIND. SHARE.</span>
         </div>
-        <span className="model-badge">llama3.1:8b · local</span>
+        <span className="model-badge">dolphin-llama3:8b · local</span>
       </header>
 
       <div className="chat-window">
