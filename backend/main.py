@@ -1,8 +1,7 @@
-import os
 import logging
 from contextlib import asynccontextmanager
 
-import anthropic
+import httpx
 import secure
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -18,7 +17,6 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Rate limiter — keyed by IP
 limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
 
 secure_headers = secure.Secure(
@@ -32,15 +30,26 @@ secure_headers = secure.Secure(
     cache=secure.CacheControl().no_store(),
 )
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL = "claude-haiku-4-5"
+OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+MODEL = "llama3.1:8b"
 MAX_INPUT_LENGTH = 4000
+SYSTEM_PROMPT = (
+    "You are a helpful AI assistant used in a security demonstration platform. "
+    "Respond clearly and concisely."
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if not ANTHROPIC_API_KEY:
-        logger.warning("ANTHROPIC_API_KEY not set — chat endpoint will be unavailable")
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3.0)
+            if r.status_code == 200:
+                logger.info("Ollama is reachable — model: %s", MODEL)
+            else:
+                logger.warning("Ollama responded with status %s", r.status_code)
+        except Exception:
+            logger.warning("Ollama not reachable at startup — is it running?")
     yield
 
 
@@ -100,28 +109,43 @@ class ChatRequest(BaseModel):
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok", "model": MODEL}
+async def health():
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3.0)
+            ollama_ok = r.status_code == 200
+        except Exception:
+            ollama_ok = False
+    return {"status": "ok", "model": MODEL, "ollama": ollama_ok}
 
 
 @app.post("/api/chat")
 @limiter.limit("20/minute")
 async def chat(request: Request, body: ChatRequest):
-    if not ANTHROPIC_API_KEY:
-        return JSONResponse(status_code=503, content={"error": "API key not configured"})
-
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
 
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=1024,
-        system=(
-            "You are a helpful AI assistant used in a security demonstration platform. "
-            "Respond clearly and concisely."
-        ),
-        messages=messages,
-    )
+    payload = {
+        "model": MODEL,
+        "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + messages,
+        "stream": False,
+        "options": {"num_predict": 1024},
+    }
 
-    return {"role": "assistant", "content": response.content[0].text}
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json=payload,
+                timeout=60.0,
+            )
+            r.raise_for_status()
+    except httpx.ConnectError:
+        return JSONResponse(status_code=503, content={"error": "Ollama is not running"})
+    except httpx.TimeoutException:
+        return JSONResponse(status_code=504, content={"error": "Model response timed out"})
+    except httpx.HTTPStatusError as e:
+        logger.error("Ollama error: %s", e.response.text)
+        return JSONResponse(status_code=502, content={"error": "Model error"})
+
+    data = r.json()
+    return {"role": "assistant", "content": data["message"]["content"]}

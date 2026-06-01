@@ -18,3 +18,5 @@ frontend/dist/
 # IDE
 .vscode/
 .idea/
+# Exception: keep VS Code Python interpreter setting
+!.vscode/settings.json

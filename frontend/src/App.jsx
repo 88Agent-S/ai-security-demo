@@ -57,7 +57,7 @@ function App() {
     <div className="app">
       <header className="header">
         <h1>AI Security Demo Platform</h1>
-        <span className="model-badge">claude-haiku-4-5</span>
+        <span className="model-badge">llama3.1:8b · local</span>
       </header>
 
       <div className="chat-window">
