@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import logo from './assets/logo.png'
 import './App.css'
 
 const API_BASE = 'http://127.0.0.1:8000'
@@ -56,7 +57,11 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>AI Security Demo Platform</h1>
+        <img src={logo} alt="SHEK iTQut" className="header-logo" />
+        <div className="header-text">
+          <h1>AI Security Demo Platform</h1>
+          <span className="header-tagline">DISCOVER. FIND. SHARE.</span>
+        </div>
         <span className="model-badge">llama3.1:8b · local</span>
       </header>
 
