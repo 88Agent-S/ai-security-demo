@@ -97,6 +97,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [activeCategory, setActiveCategory] = useState(null)
+  const [expandedStats, setExpandedStats] = useState({})
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -127,7 +128,7 @@ function App() {
       }
 
       const data = await res.json()
-      setMessages(prev => [...prev, { role: 'assistant', content: data.content }])
+      setMessages(prev => [...prev, { role: 'assistant', content: data.content, stats: data.stats }])
     } catch (err) {
       setError(err.message)
     } finally {
@@ -203,6 +204,24 @@ function App() {
               <div key={i} className={`message ${msg.role}`}>
                 <span className="role-label">{msg.role === 'user' ? 'You' : 'AI'}</span>
                 <p>{msg.content}</p>
+                {msg.stats && (
+                  <div className="stats-row">
+                    <button
+                      className="stats-toggle"
+                      onClick={() => setExpandedStats(prev => ({ ...prev, [i]: !prev[i] }))}
+                    >
+                      {expandedStats[i] ? '▾ hide stats' : '▸ stats'}
+                    </button>
+                    {expandedStats[i] && (
+                      <div className="stats-panel">
+                        <span>⏱ {msg.stats.total_ms}ms</span>
+                        <span>↑ {msg.stats.prompt_tokens} prompt tokens</span>
+                        <span>↓ {msg.stats.completion_tokens} completion tokens</span>
+                        <span>⚡ {msg.stats.tokens_per_sec} tok/s</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
             {loading && (

@@ -148,4 +148,15 @@ async def chat(request: Request, body: ChatRequest):
         return JSONResponse(status_code=502, content={"error": "Model error"})
 
     data = r.json()
-    return {"role": "assistant", "content": data["message"]["content"]}
+    return {
+        "role": "assistant",
+        "content": data["message"]["content"],
+        "stats": {
+            "total_ms": round(data.get("total_duration", 0) / 1_000_000),
+            "prompt_tokens": data.get("prompt_eval_count", 0),
+            "completion_tokens": data.get("eval_count", 0),
+            "tokens_per_sec": round(
+                data.get("eval_count", 0) / (data.get("eval_duration", 1) / 1_000_000_000), 1
+            ),
+        },
+    }
