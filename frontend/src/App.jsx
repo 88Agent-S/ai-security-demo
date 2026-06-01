@@ -98,6 +98,7 @@ function App() {
   const [error, setError] = useState(null)
   const [activeCategory, setActiveCategory] = useState(null)
   const [expandedStats, setExpandedStats] = useState({})
+  const [airsEnabled, setAirsEnabled] = useState(false)
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -119,7 +120,7 @@ function App() {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: updatedMessages }),
+        body: JSON.stringify({ messages: updatedMessages, airs_enabled: airsEnabled }),
       })
 
       if (!res.ok) {
@@ -128,7 +129,7 @@ function App() {
       }
 
       const data = await res.json()
-      setMessages(prev => [...prev, { role: 'assistant', content: data.content, stats: data.stats }])
+      setMessages(prev => [...prev, { role: 'assistant', content: data.content, stats: data.stats, airs: data.airs }])
     } catch (err) {
       setError(err.message)
     } finally {
@@ -157,6 +158,18 @@ function App() {
           <span className="header-tagline">DISCOVER. FIND. SHARE.</span>
         </div>
         <span className="model-badge">dolphin-llama3:8b · local</span>
+        <div className="airs-toggle-wrap">
+          <span className={`airs-label ${airsEnabled ? 'on' : 'off'}`}>
+            PRISMA AIRS {airsEnabled ? 'ON' : 'OFF'}
+          </span>
+          <button
+            className={`airs-toggle ${airsEnabled ? 'enabled' : ''}`}
+            onClick={() => setAirsEnabled(v => !v)}
+            title="Toggle Prisma AIRS Runtime Protection"
+          >
+            <span className="airs-knob" />
+          </button>
+        </div>
       </header>
 
       <div className="main-layout">
@@ -204,6 +217,22 @@ function App() {
               <div key={i} className={`message ${msg.role}`}>
                 <span className="role-label">{msg.role === 'user' ? 'You' : 'AI'}</span>
                 <p>{msg.content}</p>
+                {msg.airs && (
+                  <div className="airs-result">
+                    {msg.airs.prompt && (
+                      <span className={`airs-badge ${msg.airs.prompt.status}`}>
+                        AIRS PROMPT: {msg.airs.prompt.status.toUpperCase()}
+                        {msg.airs.prompt.threats?.length > 0 && ` — ${msg.airs.prompt.threats.join(', ')}`}
+                      </span>
+                    )}
+                    {msg.airs.response && (
+                      <span className={`airs-badge ${msg.airs.response.status}`}>
+                        AIRS RESPONSE: {msg.airs.response.status.toUpperCase()}
+                        {msg.airs.response.threats?.length > 0 && ` — ${msg.airs.response.threats.join(', ')}`}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {msg.stats && (
                   <div className="stats-row">
                     <button

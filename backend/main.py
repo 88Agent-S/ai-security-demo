@@ -1,4 +1,6 @@
 import logging
+import os
+import uuid
 from contextlib import asynccontextmanager
 
 import httpx
@@ -38,6 +40,75 @@ SYSTEM_PROMPT = (
     "Respond clearly and concisely."
 )
 
+PRISMA_AIRS_API_KEY = os.getenv("PRISMA_AIRS_API_KEY")
+PRISMA_AIRS_PROFILE = os.getenv("PRISMA_AIRS_PROFILE", "mac-mini-apisec")
+PRISMA_AIRS_ENDPOINT = os.getenv("PRISMA_AIRS_ENDPOINT", "https://service.api.aisecurity.paloaltonetworks.com")
+
+
+async def scan_with_airs(prompt: str, response: str = "") -> dict:
+    """Scan prompt and/or response with Prisma AIRS. Returns scan result dict."""
+    if not PRISMA_AIRS_API_KEY:
+        return {"error": "AIRS not configured"}
+
+    payload = {
+        "tr_id": str(uuid.uuid4()),
+        "ai_profile": {"profile_name": PRISMA_AIRS_PROFILE},
+        "contents": [{"prompt": prompt, "response": response}],
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"{PRISMA_AIRS_ENDPOINT}/v1/scan",
+                json=payload,
+                headers={
+                    "x-pan-token": PRISMA_AIRS_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                timeout=10.0,
+            )
+            r.raise_for_status()
+            return r.json()
+    except httpx.TimeoutException:
+        logger.warning("AIRS scan timed out")
+        return {"error": "AIRS timeout"}
+    except Exception as e:
+        logger.warning("AIRS scan failed: %s", e)
+        return {"error": str(e)}
+
+
+def parse_airs_result(result: dict) -> dict:
+    """Normalise AIRS response into a simple threat summary."""
+    if "error" in result:
+        return {"status": "error", "message": result["error"]}
+
+    action = result.get("action", "allow")
+    category = result.get("category", "")
+
+    # Collect detected threat types
+    threats = []
+    prompt_det = result.get("prompt_detected", {})
+    resp_det = result.get("response_detected", {})
+
+    threat_map = {
+        "injection": "Prompt Injection",
+        "url_cats": "Malicious URL",
+        "dlp": "Sensitive Data",
+        "toxic_content": "Toxic Content",
+        "malicious_code": "Malicious Code",
+    }
+
+    for key, label in threat_map.items():
+        if prompt_det.get(key) or resp_det.get(key):
+            threats.append(label)
+
+    return {
+        "status": "block" if action == "block" else "allow",
+        "action": action,
+        "category": category,
+        "threats": threats,
+    }
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -50,6 +121,10 @@ async def lifespan(app: FastAPI):
                 logger.warning("Ollama responded with status %s", r.status_code)
         except Exception:
             logger.warning("Ollama not reachable at startup — is it running?")
+    if PRISMA_AIRS_API_KEY:
+        logger.info("Prisma AIRS configured — profile: %s", PRISMA_AIRS_PROFILE)
+    else:
+        logger.warning("Prisma AIRS not configured — AIRS toggle will be disabled")
     yield
 
 
@@ -97,6 +172,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
+    airs_enabled: bool = False
 
     @field_validator("messages")
     @classmethod
@@ -116,14 +192,34 @@ async def health():
             ollama_ok = r.status_code == 200
         except Exception:
             ollama_ok = False
-    return {"status": "ok", "model": MODEL, "ollama": ollama_ok}
+    return {
+        "status": "ok",
+        "model": MODEL,
+        "ollama": ollama_ok,
+        "airs": bool(PRISMA_AIRS_API_KEY),
+    }
 
 
 @app.post("/api/chat")
 @limiter.limit("20/minute")
 async def chat(request: Request, body: ChatRequest):
-    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+    prompt = body.messages[-1].content
+    airs_prompt_result = None
+    airs_response_result = None
 
+    # Scan incoming prompt with AIRS if enabled
+    if body.airs_enabled and PRISMA_AIRS_API_KEY:
+        raw = await scan_with_airs(prompt=prompt)
+        airs_prompt_result = parse_airs_result(raw)
+        if airs_prompt_result["status"] == "block":
+            return JSONResponse(status_code=200, content={
+                "role": "assistant",
+                "content": f"[PRISMA AIRS BLOCKED] This prompt was blocked by Prisma AIRS.\nThreat detected: {', '.join(airs_prompt_result['threats']) or airs_prompt_result['category']}",
+                "airs": {"prompt": airs_prompt_result, "response": None},
+                "stats": None,
+            })
+
+    messages = [{"role": m.role, "content": m.content} for m in body.messages]
     payload = {
         "model": MODEL,
         "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + messages,
@@ -148,9 +244,20 @@ async def chat(request: Request, body: ChatRequest):
         return JSONResponse(status_code=502, content={"error": "Model error"})
 
     data = r.json()
+    ai_response = data["message"]["content"]
+
+    # Scan model response with AIRS if enabled
+    if body.airs_enabled and PRISMA_AIRS_API_KEY:
+        raw = await scan_with_airs(prompt=prompt, response=ai_response)
+        airs_response_result = parse_airs_result(raw)
+
     return {
         "role": "assistant",
-        "content": data["message"]["content"],
+        "content": ai_response,
+        "airs": {
+            "prompt": airs_prompt_result,
+            "response": airs_response_result,
+        } if body.airs_enabled else None,
         "stats": {
             "total_ms": round(data.get("total_duration", 0) / 1_000_000),
             "prompt_tokens": data.get("prompt_eval_count", 0),

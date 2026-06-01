@@ -65,6 +65,91 @@ body {
   flex-shrink: 0;
 }
 
+.airs-toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.airs-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-family: monospace;
+}
+
+.airs-label.off { color: #4a5568; }
+.airs-label.on  { color: #68d391; }
+
+.airs-toggle {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  border: none;
+  background: #2d3148;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.airs-toggle.enabled {
+  background: #276749;
+}
+
+.airs-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #718096;
+  transition: transform 0.2s, background 0.2s;
+  display: block;
+}
+
+.airs-toggle.enabled .airs-knob {
+  transform: translateX(18px);
+  background: #68d391;
+}
+
+.airs-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.airs-badge {
+  font-size: 0.68rem;
+  font-family: monospace;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
+
+.airs-badge.allow {
+  background: #1a2e1a;
+  color: #68d391;
+  border: 1px solid #276749;
+}
+
+.airs-badge.block {
+  background: #2d1515;
+  color: #fc8181;
+  border: 1px solid #7f1d1d;
+}
+
+.airs-badge.error {
+  background: #2d2515;
+  color: #f6ad55;
+  border: 1px solid #7b5a1d;
+}
+
 /* Main layout */
 .main-layout {
   display: flex;
