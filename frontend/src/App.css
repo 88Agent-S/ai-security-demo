@@ -63,6 +63,87 @@ body {
   border-radius: 4px;
   font-family: monospace;
   flex-shrink: 0;
+  transition: background 0.2s, color 0.2s;
+}
+
+.model-badge.assistant-mode {
+  background: #1a2e1a;
+  color: #68d391;
+}
+
+.mode-toggle-wrap {
+  display: flex;
+  border: 1px solid #2d3148;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.mode-btn {
+  background: none;
+  border: none;
+  color: #4a5568;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mode-btn.active {
+  background: #e53e3e;
+  color: #fff;
+}
+
+.mode-btn.active:last-child {
+  background: #276749;
+}
+
+.gateway-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-family: monospace;
+  font-weight: 600;
+  color: #a78bfa;
+  background: #1e1a2e;
+  border: 1px solid #4c1d95;
+  border-radius: 4px;
+  padding: 2px 8px;
+  margin-top: 6px;
+  letter-spacing: 0.04em;
+}
+
+.tool-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+}
+
+.tool-call {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #0f1117;
+  border: 1px solid #2d3148;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: monospace;
+  font-size: 0.7rem;
+}
+
+.tool-name {
+  color: #68d391;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tool-args {
+  color: #718096;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .airs-toggle-wrap {
@@ -328,6 +409,30 @@ body {
 .message.user .role-label {
   text-align: right;
   color: #60a5fa;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.replay-btn {
+  background: none;
+  border: none;
+  color: #4a5568;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.replay-btn:hover:not(:disabled) {
+  color: #60a5fa;
+}
+
+.replay-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .message p {

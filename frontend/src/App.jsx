@@ -99,17 +99,19 @@ function App() {
   const [activeCategory, setActiveCategory] = useState(null)
   const [expandedStats, setExpandedStats] = useState({})
   const [airsEnabled, setAirsEnabled] = useState(false)
+  const [gatewayEnabled, setGatewayEnabled] = useState(false)
+  const [mode, setMode] = useState('attack')
   const bottomRef = useRef(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  async function sendMessage(text) {
+  async function sendFrom(history, text) {
     if (!text.trim() || loading) return
 
     const userMessage = { role: 'user', content: text.trim() }
-    const updatedMessages = [...messages, userMessage]
+    const updatedMessages = [...history, userMessage]
 
     setMessages(updatedMessages)
     setInput('')
@@ -120,7 +122,7 @@ function App() {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: updatedMessages, airs_enabled: airsEnabled }),
+        body: JSON.stringify({ messages: updatedMessages, airs_enabled: airsEnabled, mode, gateway_enabled: gatewayEnabled }),
       })
 
       if (!res.ok) {
@@ -129,12 +131,20 @@ function App() {
       }
 
       const data = await res.json()
-      setMessages(prev => [...prev, { role: 'assistant', content: data.content, stats: data.stats, airs: data.airs }])
+      setMessages(prev => [...prev, { role: 'assistant', content: data.content, stats: data.stats, airs: data.airs, toolCalls: data.tool_calls, gateway: data.gateway }])
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  function sendMessage(text) {
+    return sendFrom(messages, text)
+  }
+
+  function replayMessage(index) {
+    sendFrom(messages.slice(0, index), messages[index].content)
   }
 
   function handleKeyDown(e) {
@@ -157,7 +167,31 @@ function App() {
           <h1>AI Security Demo Platform</h1>
           <span className="header-tagline">DISCOVER. FIND. SHARE.</span>
         </div>
-        <span className="model-badge">dolphin-llama3:8b · local</span>
+        <span className={`model-badge ${mode === 'assistant' ? 'assistant-mode' : ''}`}>
+          {mode === 'attack' ? 'dolphin-llama3:8b · attack' : 'llama3.1:8b · assistant'}
+        </span>
+        <div className="mode-toggle-wrap">
+          <button
+            className={`mode-btn ${mode === 'attack' ? 'active' : ''}`}
+            onClick={() => { setMode('attack'); setMessages([]) }}
+          >ATTACK</button>
+          <button
+            className={`mode-btn ${mode === 'assistant' ? 'active' : ''}`}
+            onClick={() => { setMode('assistant'); setMessages([]) }}
+          >ASSISTANT</button>
+        </div>
+        <div className="airs-toggle-wrap">
+          <span className={`airs-label ${gatewayEnabled ? 'on' : 'off'}`}>
+            PORTKEY {gatewayEnabled ? 'ON' : 'OFF'}
+          </span>
+          <button
+            className={`airs-toggle ${gatewayEnabled ? 'enabled' : ''}`}
+            onClick={() => setGatewayEnabled(v => !v)}
+            title="Toggle Portkey AI Gateway"
+          >
+            <span className="airs-knob" />
+          </button>
+        </div>
         <div className="airs-toggle-wrap">
           <span className={`airs-label ${airsEnabled ? 'on' : 'off'}`}>
             PRISMA AIRS {airsEnabled ? 'ON' : 'OFF'}
@@ -215,7 +249,17 @@ function App() {
             )}
             {messages.map((msg, i) => (
               <div key={i} className={`message ${msg.role}`}>
-                <span className="role-label">{msg.role === 'user' ? 'You' : 'AI'}</span>
+                <span className="role-label">
+                  {msg.role === 'user' ? 'You' : 'AI'}
+                  {msg.role === 'user' && (
+                    <button
+                      className="replay-btn"
+                      onClick={() => replayMessage(i)}
+                      disabled={loading}
+                      title="Re-send this prompt"
+                    >↺</button>
+                  )}
+                </span>
                 <p>{msg.content}</p>
                 {msg.airs && (
                   <div className="airs-result">
@@ -231,6 +275,19 @@ function App() {
                         {msg.airs.response.threats?.length > 0 && ` — ${msg.airs.response.threats.join(', ')}`}
                       </span>
                     )}
+                  </div>
+                )}
+                {msg.gateway && (
+                  <span className="gateway-badge">⬡ via Portkey Gateway</span>
+                )}
+                {msg.toolCalls?.length > 0 && (
+                  <div className="tool-calls">
+                    {msg.toolCalls.map((tc, j) => (
+                      <div key={j} className="tool-call">
+                        <span className="tool-name">⚙ {tc.tool}</span>
+                        <span className="tool-args">{JSON.stringify(tc.args)}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
                 {msg.stats && (
