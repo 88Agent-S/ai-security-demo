@@ -413,35 +413,30 @@ async def chat(request: Request, body: ChatRequest):
 
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
 
-    # AIRS prompt scan — runs regardless of gateway mode
-    if body.airs_enabled and PRISMA_AIRS_API_KEY:
-        raw = await scan_with_airs(prompt=prompt)
-        airs_prompt_result = parse_airs_result(raw)
-        if airs_prompt_result["status"] == "block":
-            return JSONResponse(status_code=200, content={
-                "role": "assistant",
-                "content": (
-                    "[PRISMA AIRS BLOCKED] This prompt was blocked by Prisma AIRS.\n"
-                    f"Threat detected: {', '.join(airs_prompt_result['threats']) or airs_prompt_result['category']}"
-                ),
-                "airs": {"prompt": airs_prompt_result, "response": None},
-                "tool_calls": None,
-                "stats": None,
-            })
-
-    # Gateway path — Portkey handles routing
+    # Gateway path — traffic flows through Portkey; AIRS guardrail runs inside Portkey
     if body.gateway_enabled and PORTKEY_API_KEY and OLLAMA_PUBLIC_URL:
         try:
             ai_response, tool_calls, data = await chat_via_portkey(messages, body.mode, body.airs_enabled)
         except Exception as e:
-            logger.error("Portkey error: %s", e)
-            return JSONResponse(status_code=502, content={"error": f"Gateway error: {e}"})
+            err_str = str(e)
+            logger.error("Portkey error: %s", err_str)
+            # Portkey raises an exception when a guardrail (AIRS) blocks the request
+            if body.airs_enabled and ("guardrail" in err_str.lower() or "blocked" in err_str.lower() or "400" in err_str):
+                return JSONResponse(status_code=200, content={
+                    "role": "assistant",
+                    "content": "[PRISMA AIRS BLOCKED] This prompt was blocked by Prisma AIRS via Portkey.",
+                    "airs": {"prompt": {"status": "block", "threats": []}, "response": None},
+                    "tool_calls": None,
+                    "gateway": True,
+                    "stats": None,
+                })
+            return JSONResponse(status_code=502, content={"error": f"Gateway error: {err_str}"})
 
         return {
             "role": "assistant",
             "content": ai_response,
             "tool_calls": tool_calls,
-            "airs": {"prompt": airs_prompt_result, "response": None} if body.airs_enabled else None,
+            "airs": {"prompt": {"status": "allow", "threats": []}, "response": None} if body.airs_enabled else None,
             "gateway": True,
             "stats": None,
         }
