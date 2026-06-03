@@ -236,7 +236,7 @@ function App() {
               )}
             </div>
           ))}
-          <button className="clear-btn" onClick={() => setMessages([])}>
+          <button className="clear-btn" onClick={() => { setMessages([]); setError(null) }}>
             Clear Chat
           </button>
         </aside>
