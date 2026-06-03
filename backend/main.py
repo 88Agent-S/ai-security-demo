@@ -419,10 +419,19 @@ async def chat(request: Request, body: ChatRequest):
             ai_response, tool_calls, data = await chat_via_portkey(messages, body.mode, body.airs_enabled)
         except Exception as e:
             logger.error("Portkey error: %s", e)
-            if body.airs_enabled and getattr(e, "status_code", None) == 446:
+            err_str = str(e)
+            is_airs_block = body.airs_enabled and (
+                getattr(e, "status_code", None) == 446 or "446" in err_str
+            )
+            if is_airs_block:
                 threats = []
                 try:
-                    body_data = e.body if isinstance(getattr(e, "body", None), dict) else {}
+                    import ast
+                    body_data = getattr(e, "body", None)
+                    if not isinstance(body_data, dict):
+                        start = err_str.find("{")
+                        if start != -1:
+                            body_data = ast.literal_eval(err_str[start:])
                     hooks = body_data.get("hook_results", {}).get("before_request_hooks", [])
                     if hooks:
                         pd = hooks[0].get("checks", [{}])[0].get("data", {}).get("prompt_detected", {})
