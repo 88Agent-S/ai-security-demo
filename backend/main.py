@@ -413,24 +413,7 @@ async def chat(request: Request, body: ChatRequest):
 
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
 
-    # Gateway path — Portkey handles routing + AIRS guardrail
-    if body.gateway_enabled and PORTKEY_API_KEY and OLLAMA_PUBLIC_URL:
-        try:
-            ai_response, tool_calls, data = await chat_via_portkey(messages, body.mode, body.airs_enabled)
-        except Exception as e:
-            logger.error("Portkey error: %s", e)
-            return JSONResponse(status_code=502, content={"error": f"Gateway error: {e}"})
-
-        return {
-            "role": "assistant",
-            "content": ai_response,
-            "tool_calls": tool_calls,
-            "airs": {"via": "portkey", "config": PORTKEY_AIRS_CONFIG_ID} if body.airs_enabled else None,
-            "gateway": True,
-            "stats": None,
-        }
-
-    # Direct path — manual AIRS + direct Ollama
+    # AIRS prompt scan — runs regardless of gateway mode
     if body.airs_enabled and PRISMA_AIRS_API_KEY:
         raw = await scan_with_airs(prompt=prompt)
         airs_prompt_result = parse_airs_result(raw)
@@ -445,6 +428,23 @@ async def chat(request: Request, body: ChatRequest):
                 "tool_calls": None,
                 "stats": None,
             })
+
+    # Gateway path — Portkey handles routing
+    if body.gateway_enabled and PORTKEY_API_KEY and OLLAMA_PUBLIC_URL:
+        try:
+            ai_response, tool_calls, data = await chat_via_portkey(messages, body.mode, body.airs_enabled)
+        except Exception as e:
+            logger.error("Portkey error: %s", e)
+            return JSONResponse(status_code=502, content={"error": f"Gateway error: {e}"})
+
+        return {
+            "role": "assistant",
+            "content": ai_response,
+            "tool_calls": tool_calls,
+            "airs": {"prompt": airs_prompt_result, "response": None} if body.airs_enabled else None,
+            "gateway": True,
+            "stats": None,
+        }
 
     try:
         if body.mode == "assistant" and mcp_tool_definitions:
