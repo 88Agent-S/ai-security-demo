@@ -418,19 +418,36 @@ async def chat(request: Request, body: ChatRequest):
         try:
             ai_response, tool_calls, data = await chat_via_portkey(messages, body.mode, body.airs_enabled)
         except Exception as e:
-            err_str = str(e)
-            logger.error("Portkey error: %s", err_str)
-            # Portkey raises an exception when a guardrail (AIRS) blocks the request
-            if body.airs_enabled and ("guardrail" in err_str.lower() or "blocked" in err_str.lower() or "400" in err_str):
+            logger.error("Portkey error: %s", e)
+            if body.airs_enabled and getattr(e, "status_code", None) == 446:
+                threats = []
+                try:
+                    body_data = e.body if isinstance(getattr(e, "body", None), dict) else {}
+                    hooks = body_data.get("hook_results", {}).get("before_request_hooks", [])
+                    if hooks:
+                        pd = hooks[0].get("checks", [{}])[0].get("data", {}).get("prompt_detected", {})
+                        threat_map = {
+                            "injection": "Prompt Injection",
+                            "url_cats": "Malicious URL",
+                            "dlp": "Sensitive Data",
+                            "toxic_content": "Toxic Content",
+                            "malicious_code": "Malicious Code",
+                        }
+                        threats = [label for key, label in threat_map.items() if pd.get(key)]
+                except Exception:
+                    pass
                 return JSONResponse(status_code=200, content={
                     "role": "assistant",
-                    "content": "[PRISMA AIRS BLOCKED] This prompt was blocked by Prisma AIRS via Portkey.",
-                    "airs": {"prompt": {"status": "block", "threats": []}, "response": None},
+                    "content": (
+                        "[PRISMA AIRS BLOCKED] This prompt was blocked by Prisma AIRS.\n"
+                        f"Threat detected: {', '.join(threats) if threats else 'Policy violation'}"
+                    ),
+                    "airs": {"prompt": {"status": "block", "threats": threats}, "response": None},
                     "tool_calls": None,
                     "gateway": True,
                     "stats": None,
                 })
-            return JSONResponse(status_code=502, content={"error": f"Gateway error: {err_str}"})
+            return JSONResponse(status_code=502, content={"error": f"Gateway error: {e}"})
 
         return {
             "role": "assistant",
