@@ -101,13 +101,13 @@ function App() {
   const [airsEnabled, setAirsEnabled] = useState(false)
   const [gatewayEnabled, setGatewayEnabled] = useState(false)
   const [provider, setProvider] = useState('ollama')
-  const [groqModel, setGroqModel] = useState('llama3-70b-8192')
+  const [groqModel, setGroqModel] = useState('llama-3.1-8b-instant')
   const [mode, setMode] = useState('attack')
 
   const GROQ_MODELS = [
-    { id: 'llama3-70b-8192',              label: 'Llama 3 70B' },
-    { id: 'deepseek-r1-distill-qwen-32b', label: 'DeepSeek R1 32B' },
-    { id: 'gemma-7b-it',                  label: 'Gemma 7B' },
+    { id: 'llama-3.1-8b-instant',                    label: 'Llama 3.1 8B' },
+    { id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout 17B' },
+    { id: 'qwen/qwen3-32b',                           label: 'Qwen 3 32B' },
   ]
   const bottomRef = useRef(null)
 
