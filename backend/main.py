@@ -468,14 +468,21 @@ async def get_model_scans(request: Request):
         raw = dict(client.list_scans())
         scans = raw.get("scans", [])
 
-        results = []
+        seen: dict = {}
         for s in scans:
             labels = {lbl.key: lbl.value for lbl in (s.labels or [])}
             if labels.get("platform") != "macmini":
                 continue
+            name = labels.get("demo", s.model_uri.split("/")[-1] if s.model_uri else "unknown")
+            if name not in seen or s.created_at > seen[name].created_at:
+                seen[name] = s
+
+        results = []
+        for name, s in seen.items():
+            labels = {lbl.key: lbl.value for lbl in (s.labels or [])}
             outcome = str(s.eval_outcome).replace("EvalOutcome.", "")
             results.append({
-                "name": labels.get("demo", s.model_uri.split("/")[-1] if s.model_uri else "unknown"),
+                "name": name,
                 "outcome": outcome,
                 "rules_failed": s.eval_summary.rules_failed,
                 "rules_total": s.eval_summary.total_rules,
