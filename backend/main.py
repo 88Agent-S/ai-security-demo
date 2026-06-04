@@ -72,14 +72,13 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 PROVIDER_MODELS = {
     "ollama": ATTACK_MODEL,
-    "groq": "llama-3.3-70b-versatile",
+    "groq": "llama3-70b-8192",
 }
 
 GROQ_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "mixtral-8x7b-32768",
-    "gemma2-9b-it",
+    "llama3-70b-8192",
+    "deepseek-r1-distill-qwen-32b",
+    "gemma-7b-it",
 ]
 
 def _groq_available() -> bool:
