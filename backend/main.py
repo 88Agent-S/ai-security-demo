@@ -471,7 +471,7 @@ async def get_model_scans(request: Request):
         seen: dict = {}
         for s in scans:
             labels = {lbl.key: lbl.value for lbl in (s.labels or [])}
-            if labels.get("platform") not in ("macmini", "macmini-hf"):
+            if labels.get("platform") != "macmini-hf":
                 continue
             name = labels.get("demo", s.model_uri.split("/")[-1] if s.model_uri else "unknown")
             if name not in seen or s.created_at > seen[name].created_at:
