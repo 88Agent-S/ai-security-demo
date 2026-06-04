@@ -459,6 +459,11 @@ body {
   font-family: monospace;
 }
 
+.hf-icon {
+  color: #a78bfa;
+  font-size: 0.7rem;
+}
+
 .scan-outcome {
   font-size: 0.62rem;
   font-weight: 700;

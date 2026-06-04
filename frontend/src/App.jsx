@@ -265,10 +265,15 @@ function App() {
     const threat = threatDetails[scan.name] || `${scan.rules_failed} of ${scan.rules_total} security rules violated.`
     const scanners = 'PickleScanner · SafetensorsScan · TensorFlowBackdoorScan · PyTorchV1_13Scanner · KerasConfigScan · ONNXBackdoorScan · TarSlipScan · ZipSlipScan · NumpyScanner · and 11 others'
 
+    const sourceLabel = scan.source === 'huggingface' && scan.model_uri
+      ? `HuggingFace · ${scan.model_uri}`
+      : 'Local · Mac Mini'
+
     const report = [
       `PRISMA AIRS Model Scan Report`,
       `${'─'.repeat(34)}`,
       `Model:    ${scan.name}`,
+      `Source:   ${sourceLabel}`,
       `Outcome:  ${blocked ? '✗ BLOCKED' : '✓ CLEAN'}`,
       `Format:   ${scan.formats.join(', ')}`,
       `Files:    ${scan.files_scanned} scanned`,
@@ -419,7 +424,10 @@ function App() {
                     onClick={() => showScanReport(scan)}
                     title="Click to load report in chat"
                   >
-                    <span className="model-scan-name">{scan.name}</span>
+                    <span className="model-scan-name">
+                      {scan.source === 'huggingface' && <span className="hf-icon" title="HuggingFace">⬡ </span>}
+                      {scan.name}
+                    </span>
                     <span className={`scan-outcome ${scan.outcome.toLowerCase()}`}>
                       {scan.outcome === 'ALLOWED' ? '✓ CLEAN' : '✗ THREAT'}
                     </span>
