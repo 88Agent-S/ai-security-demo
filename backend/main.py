@@ -67,6 +67,12 @@ PRISMA_AIRS_ENDPOINT = os.getenv(
 PORTKEY_API_KEY = os.getenv("PORTKEY_API_KEY")
 PORTKEY_AIRS_CONFIG_ID = os.getenv("PORTKEY_AIRS_CONFIG_ID")
 OLLAMA_PUBLIC_URL = os.getenv("OLLAMA_PUBLIC_URL")
+GROQ_VIRTUAL_KEY = os.getenv("GROQ_VIRTUAL_KEY")
+
+PROVIDER_MODELS = {
+    "ollama": ATTACK_MODEL,
+    "groq": "llama-3.3-70b-versatile",
+}
 
 mcp_tool_definitions: list = []
 _mcp_process: subprocess.Popen | None = None
@@ -174,19 +180,26 @@ async def run_tool_chat(messages: list) -> tuple[str, list, dict]:
 
 # ── Portkey gateway ────────────────────────────────────────────────────────────
 
-async def chat_via_portkey(messages: list, mode: str, airs_enabled: bool) -> tuple[str, list | None, dict]:
+async def chat_via_portkey(messages: list, mode: str, airs_enabled: bool, provider: str = "ollama") -> tuple[str, list | None, dict]:
     """Route chat through Portkey gateway. AIRS guardrail applied when airs_enabled."""
     config = PORTKEY_AIRS_CONFIG_ID if airs_enabled else None
-    use_tools = mode == "assistant" and bool(mcp_tool_definitions)
+    use_tools = mode == "assistant" and bool(mcp_tool_definitions) and provider == "ollama"
 
-    client = Portkey(
-        api_key=PORTKEY_API_KEY,
-        provider="ollama",
-        custom_host=OLLAMA_PUBLIC_URL,
-        config=config,
-    )
+    if provider == "groq" and GROQ_VIRTUAL_KEY:
+        client = Portkey(
+            api_key=PORTKEY_API_KEY,
+            virtual_key=GROQ_VIRTUAL_KEY,
+            config=config,
+        )
+    else:
+        client = Portkey(
+            api_key=PORTKEY_API_KEY,
+            provider="ollama",
+            custom_host=OLLAMA_PUBLIC_URL,
+            config=config,
+        )
 
-    model = TOOL_MODEL if use_tools else ATTACK_MODEL
+    model = TOOL_MODEL if use_tools else PROVIDER_MODELS.get(provider, ATTACK_MODEL)
     system_prompt = SYSTEM_PROMPT_TOOLS if use_tools else SYSTEM_PROMPT
 
     loop_messages = [{"role": "system", "content": system_prompt}] + messages
@@ -363,6 +376,7 @@ class ChatRequest(BaseModel):
     airs_enabled: bool = False
     mode: str = "attack"
     gateway_enabled: bool = False
+    provider: str = "ollama"
 
     @field_validator("messages")
     @classmethod
@@ -378,6 +392,13 @@ class ChatRequest(BaseModel):
     def validate_mode(cls, v):
         if v not in ("attack", "assistant"):
             raise ValueError("mode must be 'attack' or 'assistant'")
+        return v
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v):
+        if v not in ("ollama", "groq"):
+            raise ValueError("provider must be 'ollama' or 'groq'")
         return v
 
 
@@ -400,6 +421,7 @@ async def health():
         "mcp": bool(mcp_tool_definitions),
         "mcp_tools": [t["function"]["name"] for t in mcp_tool_definitions],
         "gateway": bool(PORTKEY_API_KEY and OLLAMA_PUBLIC_URL),
+        "groq": bool(GROQ_VIRTUAL_KEY),
     }
 
 
@@ -414,9 +436,10 @@ async def chat(request: Request, body: ChatRequest):
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
 
     # Gateway path — traffic flows through Portkey; AIRS guardrail runs inside Portkey
-    if body.gateway_enabled and PORTKEY_API_KEY and OLLAMA_PUBLIC_URL:
+    groq_ok = body.provider == "groq" and bool(GROQ_VIRTUAL_KEY)
+    if body.gateway_enabled and PORTKEY_API_KEY and (OLLAMA_PUBLIC_URL or groq_ok):
         try:
-            ai_response, tool_calls, data = await chat_via_portkey(messages, body.mode, body.airs_enabled)
+            ai_response, tool_calls, data = await chat_via_portkey(messages, body.mode, body.airs_enabled, body.provider)
         except Exception as e:
             logger.error("Portkey error: %s", e)
             err_str = str(e)
@@ -464,6 +487,8 @@ async def chat(request: Request, body: ChatRequest):
             "tool_calls": tool_calls,
             "airs": {"prompt": {"status": "allow", "threats": []}, "response": None} if body.airs_enabled else None,
             "gateway": True,
+            "provider": body.provider,
+            "model": PROVIDER_MODELS.get(body.provider, ATTACK_MODEL),
             "stats": None,
         }
 

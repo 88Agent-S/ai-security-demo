@@ -100,6 +100,7 @@ function App() {
   const [expandedStats, setExpandedStats] = useState({})
   const [airsEnabled, setAirsEnabled] = useState(false)
   const [gatewayEnabled, setGatewayEnabled] = useState(false)
+  const [provider, setProvider] = useState('ollama')
   const [mode, setMode] = useState('attack')
   const bottomRef = useRef(null)
 
@@ -122,7 +123,7 @@ function App() {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: updatedMessages, airs_enabled: airsEnabled, mode, gateway_enabled: gatewayEnabled }),
+        body: JSON.stringify({ messages: updatedMessages, airs_enabled: airsEnabled, mode, gateway_enabled: gatewayEnabled, provider }),
       })
 
       if (!res.ok) {
@@ -131,7 +132,7 @@ function App() {
       }
 
       const data = await res.json()
-      setMessages(prev => [...prev, { role: 'assistant', content: data.content, stats: data.stats, airs: data.airs, toolCalls: data.tool_calls, gateway: data.gateway }])
+      setMessages(prev => [...prev, { role: 'assistant', content: data.content, stats: data.stats, airs: data.airs, toolCalls: data.tool_calls, gateway: data.gateway, provider: data.provider }])
     } catch (err) {
       setError(err.message)
     } finally {
@@ -168,7 +169,7 @@ function App() {
           <span className="header-tagline">DISCOVER. FIND. SHARE.</span>
         </div>
         <span className={`model-badge ${mode === 'assistant' ? 'assistant-mode' : ''}`}>
-          {mode === 'attack' ? 'dolphin-llama3:8b · attack' : 'llama3.1:8b · assistant'}
+          {provider === 'groq' ? 'llama-3.3-70b · groq' : mode === 'attack' ? 'dolphin-llama3:8b · local' : 'llama3.1:8b · local'}
         </span>
         <div className="mode-toggle-wrap">
           <button
@@ -179,6 +180,16 @@ function App() {
             className={`mode-btn ${mode === 'assistant' ? 'active' : ''}`}
             onClick={() => { setMode('assistant'); setMessages([]) }}
           >ASSISTANT</button>
+        </div>
+        <div className="mode-toggle-wrap">
+          <button
+            className={`mode-btn ${provider === 'ollama' ? 'active' : ''}`}
+            onClick={() => { setProvider('ollama'); setMessages([]) }}
+          >LOCAL</button>
+          <button
+            className={`mode-btn ${provider === 'groq' ? 'active groq' : ''}`}
+            onClick={() => { setProvider('groq'); setGatewayEnabled(true); setMessages([]) }}
+          >GROQ</button>
         </div>
         <div className="airs-toggle-wrap">
           <span className={`airs-label ${gatewayEnabled ? 'on' : 'off'}`}>
@@ -278,7 +289,9 @@ function App() {
                   </div>
                 )}
                 {msg.gateway && (
-                  <span className="gateway-badge">⬡ via Portkey Gateway</span>
+                  <span className="gateway-badge">
+                    ⬡ via Portkey · {msg.provider === 'groq' ? 'Groq Llama 3.3 70B' : 'Ollama (local)'}
+                  </span>
                 )}
                 {msg.toolCalls?.length > 0 && (
                   <div className="tool-calls">
