@@ -101,7 +101,15 @@ function App() {
   const [airsEnabled, setAirsEnabled] = useState(false)
   const [gatewayEnabled, setGatewayEnabled] = useState(false)
   const [provider, setProvider] = useState('ollama')
+  const [groqModel, setGroqModel] = useState('llama-3.3-70b-versatile')
   const [mode, setMode] = useState('attack')
+
+  const GROQ_MODELS = [
+    { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
+    { id: 'llama-3.1-8b-instant',    label: 'Llama 3.1 8B' },
+    { id: 'mixtral-8x7b-32768',      label: 'Mixtral 8x7B' },
+    { id: 'gemma2-9b-it',            label: 'Gemma 2 9B' },
+  ]
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -123,7 +131,7 @@ function App() {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: updatedMessages, airs_enabled: airsEnabled, mode, gateway_enabled: gatewayEnabled, provider }),
+        body: JSON.stringify({ messages: updatedMessages, airs_enabled: airsEnabled, mode, gateway_enabled: gatewayEnabled, provider, model_override: provider === 'groq' ? groqModel : null }),
       })
 
       if (!res.ok) {
@@ -132,7 +140,7 @@ function App() {
       }
 
       const data = await res.json()
-      setMessages(prev => [...prev, { role: 'assistant', content: data.content, stats: data.stats, airs: data.airs, toolCalls: data.tool_calls, gateway: data.gateway, provider: data.provider }])
+      setMessages(prev => [...prev, { role: 'assistant', content: data.content, stats: data.stats, airs: data.airs, toolCalls: data.tool_calls, gateway: data.gateway, provider: data.provider, model: data.model }])
     } catch (err) {
       setError(err.message)
     } finally {
@@ -169,7 +177,7 @@ function App() {
           <span className="header-tagline">DISCOVER. FIND. SHARE.</span>
         </div>
         <span className={`model-badge ${mode === 'assistant' ? 'assistant-mode' : ''}`}>
-          {provider === 'groq' ? 'llama-3.3-70b · groq' : mode === 'attack' ? 'dolphin-llama3:8b · local' : 'llama3.1:8b · local'}
+          {provider === 'groq' ? `${groqModel} · groq` : mode === 'attack' ? 'dolphin-llama3:8b · local' : 'llama3.1:8b · local'}
         </span>
         <div className="mode-toggle-wrap">
           <button
@@ -193,6 +201,17 @@ function App() {
             title={!gatewayEnabled ? 'Enable Portkey to use Groq' : ''}
           >GROQ</button>
         </div>
+        {provider === 'groq' && (
+          <select
+            className="groq-model-select"
+            value={groqModel}
+            onChange={e => { setGroqModel(e.target.value); setMessages([]) }}
+          >
+            {GROQ_MODELS.map(m => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+        )}
         <div className="airs-toggle-wrap">
           <span className={`airs-label ${gatewayEnabled ? 'on' : 'off'}`}>
             PORTKEY {gatewayEnabled ? 'ON' : 'OFF'}
@@ -292,7 +311,7 @@ function App() {
                 )}
                 {msg.gateway && (
                   <span className="gateway-badge">
-                    ⬡ via Portkey · {msg.provider === 'groq' ? 'Groq Llama 3.3 70B' : 'Ollama (local)'}
+                    ⬡ via Portkey · {msg.provider === 'groq' ? `Groq · ${msg.model}` : 'Ollama (local)'}
                   </span>
                 )}
                 {msg.toolCalls?.length > 0 && (

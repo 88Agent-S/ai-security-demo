@@ -75,6 +75,13 @@ PROVIDER_MODELS = {
     "groq": "llama-3.3-70b-versatile",
 }
 
+GROQ_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it",
+]
+
 def _groq_available() -> bool:
     return bool(GROQ_VIRTUAL_KEY or GROQ_API_KEY)
 
@@ -184,7 +191,7 @@ async def run_tool_chat(messages: list) -> tuple[str, list, dict]:
 
 # ── Portkey gateway ────────────────────────────────────────────────────────────
 
-async def chat_via_portkey(messages: list, mode: str, airs_enabled: bool, provider: str = "ollama") -> tuple[str, list | None, dict]:
+async def chat_via_portkey(messages: list, mode: str, airs_enabled: bool, provider: str = "ollama", model_override: str | None = None) -> tuple[str, list | None, dict]:
     """Route chat through Portkey gateway. AIRS guardrail applied when airs_enabled."""
     config = PORTKEY_AIRS_CONFIG_ID if airs_enabled else None
     use_tools = mode == "assistant" and bool(mcp_tool_definitions) and provider == "ollama"
@@ -210,7 +217,8 @@ async def chat_via_portkey(messages: list, mode: str, airs_enabled: bool, provid
             config=config,
         )
 
-    model = TOOL_MODEL if use_tools else PROVIDER_MODELS.get(provider, ATTACK_MODEL)
+    default_model = PROVIDER_MODELS.get(provider, ATTACK_MODEL)
+    model = TOOL_MODEL if use_tools else (model_override or default_model)
     system_prompt = SYSTEM_PROMPT_TOOLS if use_tools else SYSTEM_PROMPT
 
     loop_messages = [{"role": "system", "content": system_prompt}] + messages
@@ -388,6 +396,7 @@ class ChatRequest(BaseModel):
     mode: str = "attack"
     gateway_enabled: bool = False
     provider: str = "ollama"
+    model_override: str | None = None
 
     @field_validator("messages")
     @classmethod
@@ -450,7 +459,7 @@ async def chat(request: Request, body: ChatRequest):
     groq_ok = body.provider == "groq" and _groq_available()
     if body.gateway_enabled and PORTKEY_API_KEY and (OLLAMA_PUBLIC_URL or groq_ok):
         try:
-            ai_response, tool_calls, data = await chat_via_portkey(messages, body.mode, body.airs_enabled, body.provider)
+            ai_response, tool_calls, data = await chat_via_portkey(messages, body.mode, body.airs_enabled, body.provider, body.model_override)
         except Exception as e:
             logger.error("Portkey error: %s", e)
             err_str = str(e)
@@ -489,6 +498,7 @@ async def chat(request: Request, body: ChatRequest):
                     "tool_calls": None,
                     "gateway": True,
                     "provider": body.provider,
+                    "model": body.model_override or PROVIDER_MODELS.get(body.provider, ATTACK_MODEL),
                     "stats": None,
                 })
             return JSONResponse(status_code=502, content={"error": f"Gateway error: {e}"})
@@ -500,7 +510,7 @@ async def chat(request: Request, body: ChatRequest):
             "airs": {"prompt": {"status": "allow", "threats": []}, "response": None} if body.airs_enabled else None,
             "gateway": True,
             "provider": body.provider,
-            "model": PROVIDER_MODELS.get(body.provider, ATTACK_MODEL),
+            "model": body.model_override or PROVIDER_MODELS.get(body.provider, ATTACK_MODEL),
             "stats": None,
         }
 

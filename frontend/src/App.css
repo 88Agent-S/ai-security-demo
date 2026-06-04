@@ -110,6 +110,19 @@ body {
   cursor: not-allowed;
 }
 
+.groq-model-select {
+  background: #1a1d27;
+  border: 1px solid #4c1d95;
+  border-radius: 5px;
+  color: #e9d5ff;
+  font-size: 0.7rem;
+  font-family: monospace;
+  padding: 4px 8px;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+}
+
 .gateway-badge {
   display: inline-block;
   font-size: 0.68rem;
