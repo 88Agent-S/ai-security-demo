@@ -199,7 +199,7 @@ async def chat_via_portkey(messages: list, mode: str, airs_enabled: bool, provid
         client = Portkey(
             api_key=PORTKEY_API_KEY,
             provider="groq",
-            authorisation=GROQ_API_KEY,
+            Authorization=f"Bearer {GROQ_API_KEY}",
             config=config,
         )
     else:
