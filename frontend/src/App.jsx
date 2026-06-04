@@ -432,14 +432,6 @@ function App() {
                       {scan.outcome === 'ALLOWED' ? '✓ CLEAN' : '✗ THREAT'}
                     </span>
                   </button>
-                  <div className="model-scan-summary">
-                    <span className="scan-rules">
-                      {scan.rules_total - scan.rules_failed}/{scan.rules_total} rules passed
-                    </span>
-                    <div className="scan-formats">
-                      {scan.formats.map(f => <span key={f} className="format-tag">{f}</span>)}
-                    </div>
-                  </div>
                 </div>
               ))}
             </>
