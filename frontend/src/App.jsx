@@ -255,6 +255,34 @@ function App() {
     setActiveCategory(null)
   }
 
+  function showScanReport(scan) {
+    const blocked = scan.outcome === 'BLOCKED'
+    const threatDetails = {
+      'pickle-exploit': `Threat: Pickle Deserialization RCE\nThe model.pkl file contains a Python __reduce__ payload. When loaded with pickle.load(), arbitrary OS commands execute automatically — no user interaction needed. This is one of the most common model supply chain attacks. Adversaries publish models on HuggingFace that silently run malware the moment an ML engineer pulls and loads the model.\n\nAttack chain: model.pkl → pickle.load() → os.system() executes`,
+      'poisoned': `Threat: Hidden Payload in Legitimate Model\nThis model looks clean on the surface — valid safetensors weights and a config.json. But a hidden checkpoint.pkl file contains a malicious subprocess payload. This mimics a real supply chain attack: a trusted model is quietly poisoned after its initial trusted release, or a near-identical name is used to trick engineers into pulling the wrong version.\n\nAttack chain: checkpoint.pkl → subprocess.check_output() executes on load`,
+      'clean': `All 7 security rules passed. No threats detected across all file types.\n\n• No pickle/deserialization exploits\n• No backdoored weights\n• No malicious code paths\n• No archive path traversal (Tar/Zip/7z)\n• Safe to deploy`,
+    }
+    const threat = threatDetails[scan.name] || `${scan.rules_failed} of ${scan.rules_total} security rules violated.`
+    const scanners = 'PickleScanner · SafetensorsScan · TensorFlowBackdoorScan · PyTorchV1_13Scanner · KerasConfigScan · ONNXBackdoorScan · TarSlipScan · ZipSlipScan · NumpyScanner · and 11 others'
+
+    const report = [
+      `PRISMA AIRS Model Scan Report`,
+      `${'─'.repeat(34)}`,
+      `Model:    ${scan.name}`,
+      `Outcome:  ${blocked ? '✗ BLOCKED' : '✓ CLEAN'}`,
+      `Format:   ${scan.formats.join(', ')}`,
+      `Files:    ${scan.files_scanned} scanned`,
+      `Rules:    ${scan.rules_total - scan.rules_failed}/${scan.rules_total} passed`,
+      ``,
+      threat,
+      ``,
+      `Scanners: ${scanners}`,
+      `Scanned:  ${new Date(scan.scanned_at).toLocaleString()}`,
+    ].join('\n')
+
+    setMessages(prev => [...prev, { role: 'assistant', content: report }])
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -388,7 +416,8 @@ function App() {
                 <div key={i} className="model-scan-card">
                   <button
                     className="model-scan-header"
-                    onClick={() => setExpandedScan(expandedScan === i ? null : i)}
+                    onClick={() => showScanReport(scan)}
+                    title="Click to load report in chat"
                   >
                     <span className="model-scan-name">{scan.name}</span>
                     <span className={`scan-outcome ${scan.outcome.toLowerCase()}`}>
@@ -403,15 +432,6 @@ function App() {
                       {scan.formats.map(f => <span key={f} className="format-tag">{f}</span>)}
                     </div>
                   </div>
-                  {expandedScan === i && (
-                    <div className="model-scan-detail">
-                      <span>📁 {scan.files_scanned} file{scan.files_scanned !== 1 ? 's' : ''} scanned</span>
-                      <span>🕐 {new Date(scan.scanned_at).toLocaleString()}</span>
-                      {scan.rules_failed > 0 && (
-                        <span className="scan-violation">⚠ {scan.rules_failed} rule{scan.rules_failed !== 1 ? 's' : ''} violated</span>
-                      )}
-                    </div>
-                  )}
                 </div>
               ))}
             </>
