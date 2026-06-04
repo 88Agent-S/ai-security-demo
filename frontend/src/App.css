@@ -4,6 +4,18 @@
   padding: 0;
 }
 
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.stream-cursor {
+  display: inline-block;
+  animation: blink 0.8s step-start infinite;
+  margin-left: 1px;
+  color: #63b3ed;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: #0f1117;
@@ -364,6 +376,173 @@ body {
 .clear-btn:hover {
   border-color: #e53e3e;
   color: #e53e3e;
+}
+
+/* Panel tabs */
+.panel-tabs {
+  display: flex;
+  border: 1px solid #2d3148;
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.panel-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #4a5568;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  padding: 5px 0;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.panel-tab.active {
+  background: #1a1d27;
+  color: #e2e8f0;
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid #2d3148;
+  margin-bottom: 4px;
+}
+
+.refresh-btn {
+  background: none;
+  border: none;
+  color: #4a5568;
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.refresh-btn:hover:not(:disabled) { color: #a0aec0; }
+.refresh-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* Model scan cards */
+.model-scan-card {
+  background: #1a1d27;
+  border: 1px solid #2d3148;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+
+.model-scan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 8px 10px;
+  cursor: pointer;
+  gap: 6px;
+}
+
+.model-scan-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #a0aec0;
+  text-align: left;
+  flex: 1;
+  font-family: monospace;
+}
+
+.scan-outcome {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.scan-outcome.allowed {
+  background: #1a2e1a;
+  color: #68d391;
+  border: 1px solid #276749;
+}
+
+.scan-outcome.blocked {
+  background: #2d1515;
+  color: #fc8181;
+  border: 1px solid #7f1d1d;
+}
+
+.model-scan-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 8px;
+  gap: 6px;
+}
+
+.scan-rules {
+  font-size: 0.65rem;
+  color: #718096;
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+.scan-formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  justify-content: flex-end;
+}
+
+.format-tag {
+  font-size: 0.58rem;
+  background: #13151f;
+  border: 1px solid #2d3148;
+  color: #4a5568;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: monospace;
+}
+
+.model-scan-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-top: 1px solid #2d3148;
+  background: #13151f;
+  font-size: 0.68rem;
+  color: #718096;
+  font-family: monospace;
+}
+
+.scan-violation {
+  color: #fc8181;
+}
+
+.scan-loading {
+  font-size: 0.75rem;
+  color: #4a5568;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.scan-error {
+  font-size: 0.72rem;
+  color: #fc8181;
+  background: #2d1515;
+  border: 1px solid #7f1d1d;
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
 }
 
 /* Chat container */

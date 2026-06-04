@@ -103,6 +103,11 @@ function App() {
   const [provider, setProvider] = useState('ollama')
   const [groqModel, setGroqModel] = useState('llama-3.1-8b-instant')
   const [mode, setMode] = useState('attack')
+  const [leftPanel, setLeftPanel] = useState('attacks')
+  const [modelScans, setModelScans] = useState([])
+  const [modelScansLoading, setModelScansLoading] = useState(false)
+  const [modelScansError, setModelScansError] = useState(null)
+  const [expandedScan, setExpandedScan] = useState(null)
 
   const GROQ_MODELS = [
     { id: 'llama-3.1-8b-instant',                    label: 'Llama 3.1 8B' },
@@ -115,22 +120,50 @@ function App() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  useEffect(() => {
+    if (leftPanel === 'models' && modelScans.length === 0 && !modelScansLoading) {
+      fetchModelScans()
+    }
+  }, [leftPanel])
+
+  async function fetchModelScans() {
+    setModelScansLoading(true)
+    setModelScansError(null)
+    try {
+      const res = await fetch(`${API_BASE}/api/scan/models`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to load scans')
+      setModelScans(data.models || [])
+    } catch (err) {
+      setModelScansError(err.message)
+    } finally {
+      setModelScansLoading(false)
+    }
+  }
+
   async function sendFrom(history, text) {
     if (!text.trim() || loading) return
 
     const userMessage = { role: 'user', content: text.trim() }
     const updatedMessages = [...history, userMessage]
 
-    setMessages(updatedMessages)
+    setMessages(prev => [...prev.slice(0, history.length), userMessage, { role: 'assistant', content: '', streaming: true }])
     setInput('')
     setLoading(true)
     setError(null)
 
     try {
-      const res = await fetch(`${API_BASE}/api/chat`, {
+      const res = await fetch(`${API_BASE}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: updatedMessages, airs_enabled: airsEnabled, mode, gateway_enabled: gatewayEnabled, provider, model_override: provider === 'groq' ? groqModel : null }),
+        body: JSON.stringify({
+          messages: updatedMessages,
+          airs_enabled: airsEnabled,
+          mode,
+          gateway_enabled: gatewayEnabled,
+          provider,
+          model_override: provider === 'groq' ? groqModel : null,
+        }),
       })
 
       if (!res.ok) {
@@ -138,10 +171,65 @@ function App() {
         throw new Error(data.error || `Server error ${res.status}`)
       }
 
-      const data = await res.json()
-      setMessages(prev => [...prev, { role: 'assistant', content: data.content, stats: data.stats, airs: data.airs, toolCalls: data.tool_calls, gateway: data.gateway, provider: data.provider, model: data.model }])
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          let event
+          try { event = JSON.parse(line.slice(6)) } catch { continue }
+
+          if (event.type === 'token') {
+            setMessages(prev => {
+              const copy = [...prev]
+              const last = { ...copy[copy.length - 1] }
+              last.content += event.content
+              copy[copy.length - 1] = last
+              return copy
+            })
+          } else if (event.type === 'tool_call') {
+            setMessages(prev => {
+              const copy = [...prev]
+              const last = { ...copy[copy.length - 1] }
+              last.toolCalls = [...(last.toolCalls || []), { tool: event.tool, args: event.args, preview: event.preview }]
+              copy[copy.length - 1] = last
+              return copy
+            })
+          } else if (event.type === 'done') {
+            setMessages(prev => {
+              const copy = [...prev]
+              const last = { ...copy[copy.length - 1] }
+              last.streaming = false
+              last.stats = event.stats
+              last.airs = event.airs
+              if (event.tool_calls) last.toolCalls = event.tool_calls
+              last.gateway = event.gateway
+              last.provider = event.provider
+              last.model = event.model
+              copy[copy.length - 1] = last
+              return copy
+            })
+          } else if (event.type === 'error') {
+            throw new Error(event.message)
+          }
+        }
+      }
     } catch (err) {
       setError(err.message)
+      setMessages(prev => {
+        const copy = [...prev]
+        if (copy[copy.length - 1]?.streaming) copy.pop()
+        return copy
+      })
     } finally {
       setLoading(false)
     }
@@ -238,38 +326,96 @@ function App() {
       </header>
 
       <div className="main-layout">
-        {/* Attack Panel */}
+        {/* Left Panel */}
         <aside className="attack-panel">
-          <p className="panel-title">ATTACK VECTORS</p>
-          {ATTACK_CATEGORIES.map(cat => (
-            <div key={cat.label} className="attack-category">
-              <button
-                className={`category-btn ${activeCategory === cat.label ? 'active' : ''}`}
-                style={{ '--cat-color': cat.color }}
-                onClick={() => setActiveCategory(activeCategory === cat.label ? null : cat.label)}
-              >
-                <span className="cat-dot" style={{ background: cat.color }} />
-                {cat.label}
-                <span className="cat-arrow">{activeCategory === cat.label ? '▾' : '▸'}</span>
-              </button>
-              {activeCategory === cat.label && (
-                <div className="attack-list">
-                  {cat.attacks.map(atk => (
-                    <button
-                      key={atk.name}
-                      className="attack-btn"
-                      onClick={() => fireAttack(atk.prompt)}
-                    >
-                      {atk.name}
-                    </button>
-                  ))}
+          <div className="panel-tabs">
+            <button
+              className={`panel-tab ${leftPanel === 'attacks' ? 'active' : ''}`}
+              onClick={() => setLeftPanel('attacks')}
+            >ATTACKS</button>
+            <button
+              className={`panel-tab ${leftPanel === 'models' ? 'active' : ''}`}
+              onClick={() => setLeftPanel('models')}
+            >MODELS</button>
+          </div>
+
+          {leftPanel === 'attacks' && (
+            <>
+              <p className="panel-title">ATTACK VECTORS</p>
+              {ATTACK_CATEGORIES.map(cat => (
+                <div key={cat.label} className="attack-category">
+                  <button
+                    className={`category-btn ${activeCategory === cat.label ? 'active' : ''}`}
+                    style={{ '--cat-color': cat.color }}
+                    onClick={() => setActiveCategory(activeCategory === cat.label ? null : cat.label)}
+                  >
+                    <span className="cat-dot" style={{ background: cat.color }} />
+                    {cat.label}
+                    <span className="cat-arrow">{activeCategory === cat.label ? '▾' : '▸'}</span>
+                  </button>
+                  {activeCategory === cat.label && (
+                    <div className="attack-list">
+                      {cat.attacks.map(atk => (
+                        <button
+                          key={atk.name}
+                          className="attack-btn"
+                          onClick={() => fireAttack(atk.prompt)}
+                        >
+                          {atk.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
-          <button className="clear-btn" onClick={() => { setMessages([]); setError(null) }}>
-            Clear Chat
-          </button>
+              ))}
+              <button className="clear-btn" onClick={() => { setMessages([]); setError(null) }}>
+                Clear Chat
+              </button>
+            </>
+          )}
+
+          {leftPanel === 'models' && (
+            <>
+              <div className="panel-title-row">
+                <p className="panel-title">MODEL SCANNING</p>
+                <button className="refresh-btn" onClick={fetchModelScans} disabled={modelScansLoading} title="Refresh">
+                  {modelScansLoading ? '…' : '↻'}
+                </button>
+              </div>
+              {modelScansError && <p className="scan-error">{modelScansError}</p>}
+              {modelScansLoading && <p className="scan-loading">Loading scans…</p>}
+              {!modelScansLoading && modelScans.map((scan, i) => (
+                <div key={i} className="model-scan-card">
+                  <button
+                    className="model-scan-header"
+                    onClick={() => setExpandedScan(expandedScan === i ? null : i)}
+                  >
+                    <span className="model-scan-name">{scan.name}</span>
+                    <span className={`scan-outcome ${scan.outcome.toLowerCase()}`}>
+                      {scan.outcome === 'ALLOWED' ? '✓ CLEAN' : '✗ THREAT'}
+                    </span>
+                  </button>
+                  <div className="model-scan-summary">
+                    <span className="scan-rules">
+                      {scan.rules_total - scan.rules_failed}/{scan.rules_total} rules passed
+                    </span>
+                    <div className="scan-formats">
+                      {scan.formats.map(f => <span key={f} className="format-tag">{f}</span>)}
+                    </div>
+                  </div>
+                  {expandedScan === i && (
+                    <div className="model-scan-detail">
+                      <span>📁 {scan.files_scanned} file{scan.files_scanned !== 1 ? 's' : ''} scanned</span>
+                      <span>🕐 {new Date(scan.scanned_at).toLocaleString()}</span>
+                      {scan.rules_failed > 0 && (
+                        <span className="scan-violation">⚠ {scan.rules_failed} rule{scan.rules_failed !== 1 ? 's' : ''} violated</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
         </aside>
 
         {/* Chat Area */}
@@ -291,7 +437,7 @@ function App() {
                     >↺</button>
                   )}
                 </span>
-                <p>{msg.content}</p>
+                <p>{msg.content}{msg.streaming && <span className="stream-cursor">▋</span>}</p>
                 {msg.airs && (
                   <div className="airs-result">
                     {msg.airs.prompt && (
@@ -343,12 +489,6 @@ function App() {
                 )}
               </div>
             ))}
-            {loading && (
-              <div className="message assistant loading">
-                <span className="role-label">AI</span>
-                <p>Thinking...</p>
-              </div>
-            )}
             {error && <div className="error-banner">{error}</div>}
             <div ref={bottomRef} />
           </div>

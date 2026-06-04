@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -11,7 +12,7 @@ import secure
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from portkey_ai import Portkey, createHeaders, PORTKEY_GATEWAY_URL
@@ -22,8 +23,20 @@ from slowapi.util import get_remote_address
 
 load_dotenv()
 
+# Map MODEL_SECURITY_TSG_ID → TSG_ID expected by the model security SDK
+_tsg = os.getenv("MODEL_SECURITY_TSG_ID")
+if _tsg:
+    os.environ.setdefault("TSG_ID", _tsg)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+try:
+    from model_security_client.api import ModelSecurityAPIClient
+    _model_security_available = bool(os.getenv("MODEL_SECURITY_CLIENT_ID"))
+except ImportError:
+    ModelSecurityAPIClient = None
+    _model_security_available = False
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
 
@@ -63,6 +76,9 @@ PRISMA_AIRS_ENDPOINT = os.getenv(
     "PRISMA_AIRS_ENDPOINT",
     "https://service.api.aisecurity.paloaltonetworks.com/v1/scan/sync/request",
 )
+
+MODEL_SECURITY_API_ENDPOINT = os.getenv("MODEL_SECURITY_API_ENDPOINT", "https://api.sase.paloaltonetworks.com/aims")
+MODEL_SECURITY_GROUP_UUID = os.getenv("MODEL_SECURITY_GROUP_UUID")
 
 PORTKEY_API_KEY = os.getenv("PORTKEY_API_KEY")
 PORTKEY_AIRS_CONFIG_ID = os.getenv("PORTKEY_AIRS_CONFIG_ID")
@@ -169,7 +185,6 @@ async def run_tool_chat(messages: list) -> tuple[str, list, dict]:
             tool_name = fn["name"]
             arguments = fn.get("arguments", {})
             if isinstance(arguments, str):
-                import json
                 try:
                     arguments = json.loads(arguments)
                 except Exception:
@@ -246,9 +261,8 @@ async def chat_via_portkey(messages: list, mode: str, airs_enabled: bool, provid
 
         for tc in tool_calls:
             fn = tc.function
-            import json as _json
             try:
-                args = _json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
+                args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
             except Exception:
                 args = {}
             logger.info("Portkey tool → %s(%s)", fn.name, args)
@@ -444,6 +458,38 @@ async def health():
     }
 
 
+@app.get("/api/scan/models")
+@limiter.limit("10/minute")
+async def get_model_scans(request: Request):
+    if not _model_security_available:
+        return JSONResponse(status_code=503, content={"error": "Model security not configured"})
+    try:
+        client = ModelSecurityAPIClient(base_url=MODEL_SECURITY_API_ENDPOINT)
+        raw = dict(client.list_scans())
+        scans = raw.get("scans", [])
+
+        results = []
+        for s in scans:
+            labels = {lbl.key: lbl.value for lbl in (s.labels or [])}
+            if labels.get("platform") != "macmini":
+                continue
+            outcome = str(s.eval_outcome).replace("EvalOutcome.", "")
+            results.append({
+                "name": labels.get("demo", s.model_uri.split("/")[-1] if s.model_uri else "unknown"),
+                "outcome": outcome,
+                "rules_failed": s.eval_summary.rules_failed,
+                "rules_total": s.eval_summary.total_rules,
+                "formats": s.model_formats or [],
+                "files_scanned": s.total_files_scanned,
+                "scanned_at": s.created_at.isoformat(),
+                "labels": labels,
+            })
+        return {"models": results}
+    except Exception as e:
+        logger.error("Model scan fetch error: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @app.post("/api/chat")
 @limiter.limit("20/minute")
 async def chat(request: Request, body: ChatRequest):
@@ -561,3 +607,243 @@ async def chat(request: Request, body: ChatRequest):
         "airs": {"prompt": airs_prompt_result, "response": airs_response_result} if body.airs_enabled else None,
         "stats": stats,
     }
+
+
+# ── SSE streaming endpoint ─────────────────────────────────────────────────────
+
+def _sse(event_type: str, **data) -> str:
+    return f"data: {json.dumps({'type': event_type, **data})}\n\n"
+
+
+@app.post("/api/chat/stream")
+@limiter.limit("20/minute")
+async def chat_stream(request: Request, body: ChatRequest):
+    prompt = body.messages[-1].content
+    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+
+    async def event_stream():
+        # ── Gateway path (non-streaming, emit as single token) ─────────────────
+        groq_ok = body.provider == "groq" and _groq_available()
+        if body.gateway_enabled and PORTKEY_API_KEY and (OLLAMA_PUBLIC_URL or groq_ok):
+            try:
+                ai_response, tool_calls, _ = await chat_via_portkey(
+                    messages, body.mode, body.airs_enabled, body.provider, body.model_override
+                )
+                yield _sse("token", content=ai_response)
+                yield _sse(
+                    "done",
+                    tool_calls=tool_calls,
+                    airs={"prompt": {"status": "allow", "threats": []}, "response": None} if body.airs_enabled else None,
+                    stats=None,
+                    gateway=True,
+                    provider=body.provider,
+                    model=body.model_override or PROVIDER_MODELS.get(body.provider, ATTACK_MODEL),
+                )
+            except Exception as e:
+                err_str = str(e)
+                is_airs_block = body.airs_enabled and (
+                    getattr(e, "status_code", None) == 446 or "446" in err_str
+                )
+                if is_airs_block:
+                    threats = []
+                    try:
+                        import ast
+                        body_data = getattr(e, "body", None)
+                        if not isinstance(body_data, dict):
+                            start = err_str.find("{")
+                            if start != -1:
+                                body_data = ast.literal_eval(err_str[start:])
+                        hooks = body_data.get("hook_results", {}).get("before_request_hooks", [])
+                        if hooks:
+                            pd = hooks[0].get("checks", [{}])[0].get("data", {}).get("prompt_detected", {})
+                            threat_map = {
+                                "injection": "Prompt Injection",
+                                "url_cats": "Malicious URL",
+                                "dlp": "Sensitive Data",
+                                "toxic_content": "Toxic Content",
+                                "malicious_code": "Malicious Code",
+                            }
+                            threats = [label for key, label in threat_map.items() if pd.get(key)]
+                    except Exception:
+                        pass
+                    block_msg = (
+                        "[PRISMA AIRS BLOCKED] This prompt was blocked by Prisma AIRS.\n"
+                        f"Threat detected: {', '.join(threats) if threats else 'Policy violation'}"
+                    )
+                    yield _sse("token", content=block_msg)
+                    yield _sse(
+                        "done",
+                        tool_calls=None,
+                        airs={"prompt": {"status": "block", "threats": threats}, "response": None},
+                        stats=None,
+                        gateway=True,
+                        provider=body.provider,
+                        model=body.model_override or PROVIDER_MODELS.get(body.provider, ATTACK_MODEL),
+                    )
+                else:
+                    yield _sse("error", message=f"Gateway error: {e}")
+            return
+
+        # ── Assistant / tool mode (emit tool_call events, then stream final text) ─
+        if body.mode == "assistant" and mcp_tool_definitions:
+            tool_calls_log: list = []
+            loop_messages = [{"role": "system", "content": SYSTEM_PROMPT_TOOLS}] + messages
+            last_data: dict = {}
+            final_response = ""
+
+            for _ in range(8):
+                payload = {
+                    "model": TOOL_MODEL,
+                    "messages": loop_messages,
+                    "tools": mcp_tool_definitions,
+                    "stream": False,
+                    "options": {"num_predict": 2048},
+                }
+                try:
+                    async with httpx.AsyncClient() as client:
+                        r = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=120.0)
+                        r.raise_for_status()
+                except httpx.ConnectError:
+                    yield _sse("error", message="Ollama is not running")
+                    return
+                except httpx.TimeoutException:
+                    yield _sse("error", message="Model response timed out")
+                    return
+
+                last_data = r.json()
+                msg = last_data["message"]
+                tool_calls = msg.get("tool_calls") or []
+
+                if not tool_calls:
+                    final_response = msg.get("content", "")
+                    break
+
+                loop_messages.append({"role": "assistant", "content": msg.get("content", ""), "tool_calls": tool_calls})
+
+                for tc in tool_calls:
+                    fn = tc["function"]
+                    tool_name = fn["name"]
+                    arguments = fn.get("arguments", {})
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except Exception:
+                            arguments = {}
+                    logger.info("Tool → %s(%s)", tool_name, arguments)
+                    result = await call_mcp_tool(tool_name, arguments)
+                    preview = result[:200] + ("..." if len(result) > 200 else "")
+                    tool_calls_log.append({"tool": tool_name, "args": arguments, "preview": preview})
+                    yield _sse("tool_call", tool=tool_name, args=arguments, preview=preview)
+                    loop_messages.append({"role": "tool", "content": result})
+            else:
+                final_response = "Maximum tool iterations reached."
+
+            for word in final_response.split(" "):
+                yield _sse("token", content=word + " ")
+
+            airs_result = None
+            if body.airs_enabled and PRISMA_AIRS_API_KEY:
+                raw = await scan_with_airs(prompt=prompt, response=final_response)
+                airs_result = parse_airs_result(raw)
+
+            eval_duration = last_data.get("eval_duration") or 1
+            stats = {
+                "total_ms": round(last_data.get("total_duration", 0) / 1_000_000),
+                "prompt_tokens": last_data.get("prompt_eval_count", 0),
+                "completion_tokens": last_data.get("eval_count", 0),
+                "tokens_per_sec": round(last_data.get("eval_count", 0) / (eval_duration / 1_000_000_000), 1),
+            }
+            yield _sse(
+                "done",
+                tool_calls=tool_calls_log,
+                airs={"prompt": None, "response": airs_result} if body.airs_enabled else None,
+                stats=stats,
+            )
+            return
+
+        # ── Direct attack path: pre-scan prompt, then stream from Ollama ─────────
+        airs_prompt_result = None
+        airs_response_result = None
+
+        if body.airs_enabled and PRISMA_AIRS_API_KEY:
+            raw = await scan_with_airs(prompt=prompt, response="")
+            airs_prompt_result = parse_airs_result(raw)
+            if airs_prompt_result.get("status") == "block":
+                threats = airs_prompt_result.get("threats", [])
+                block_msg = (
+                    "[PRISMA AIRS BLOCKED] This prompt was blocked before reaching the model.\n"
+                    f"Threat detected: {', '.join(threats) if threats else 'Policy violation'}"
+                )
+                yield _sse("token", content=block_msg)
+                yield _sse(
+                    "done",
+                    tool_calls=None,
+                    airs={"prompt": airs_prompt_result, "response": None},
+                    stats=None,
+                )
+                return
+
+        payload = {
+            "model": ATTACK_MODEL,
+            "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + messages,
+            "stream": True,
+            "options": {"num_predict": 1024},
+        }
+        full_response = ""
+        final_data: dict = {}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "POST", f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=60.0
+                ) as r:
+                    r.raise_for_status()
+                    async for line in r.aiter_lines():
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except Exception:
+                            continue
+                        token = chunk.get("message", {}).get("content", "")
+                        if token:
+                            full_response += token
+                            yield _sse("token", content=token)
+                        if chunk.get("done"):
+                            final_data = chunk
+        except httpx.ConnectError:
+            yield _sse("error", message="Ollama is not running")
+            return
+        except httpx.TimeoutException:
+            yield _sse("error", message="Model response timed out")
+            return
+        except httpx.HTTPStatusError:
+            yield _sse("error", message="Model error")
+            return
+
+        if body.airs_enabled and PRISMA_AIRS_API_KEY:
+            raw = await scan_with_airs(prompt="", response=full_response)
+            airs_response_result = parse_airs_result(raw)
+
+        stats = None
+        if final_data:
+            eval_duration = final_data.get("eval_duration") or 1
+            stats = {
+                "total_ms": round(final_data.get("total_duration", 0) / 1_000_000),
+                "prompt_tokens": final_data.get("prompt_eval_count", 0),
+                "completion_tokens": final_data.get("eval_count", 0),
+                "tokens_per_sec": round(final_data.get("eval_count", 0) / (eval_duration / 1_000_000_000), 1),
+            }
+
+        yield _sse(
+            "done",
+            tool_calls=None,
+            airs={"prompt": airs_prompt_result, "response": airs_response_result} if body.airs_enabled else None,
+            stats=stats,
+        )
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
