@@ -426,7 +426,7 @@ function App() {
                   >
                     <span className="model-scan-name">
                       {scan.source === 'huggingface' && <span className="hf-icon" title="HuggingFace">⬡ </span>}
-                      {scan.name}
+                      {scan.name === 'poisoned' ? '☠️ ' : scan.name === 'clean' ? '🛡️ ' : ''}{scan.name}
                     </span>
                     <span className={`scan-outcome ${scan.outcome.toLowerCase()}`}>
                       {scan.outcome === 'ALLOWED' ? '✓ CLEAN' : '✗ THREAT'}
