@@ -488,6 +488,7 @@ async def chat(request: Request, body: ChatRequest):
                     "airs": {"prompt": {"status": "block", "threats": threats}, "response": None},
                     "tool_calls": None,
                     "gateway": True,
+                    "provider": body.provider,
                     "stats": None,
                 })
             return JSONResponse(status_code=502, content={"error": f"Gateway error: {e}"})
