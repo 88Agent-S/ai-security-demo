@@ -189,6 +189,8 @@ function App() {
           <button
             className={`mode-btn ${provider === 'groq' ? 'active groq' : ''}`}
             onClick={() => { setProvider('groq'); setGatewayEnabled(true); setMessages([]) }}
+            disabled={!gatewayEnabled && provider !== 'groq'}
+            title={!gatewayEnabled ? 'Enable Portkey to use Groq' : ''}
           >GROQ</button>
         </div>
         <div className="airs-toggle-wrap">

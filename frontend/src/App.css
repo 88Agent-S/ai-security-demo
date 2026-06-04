@@ -105,6 +105,11 @@ body {
   color: #e9d5ff;
 }
 
+.mode-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .gateway-badge {
   display: inline-block;
   font-size: 0.68rem;
