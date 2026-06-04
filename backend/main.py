@@ -68,11 +68,15 @@ PORTKEY_API_KEY = os.getenv("PORTKEY_API_KEY")
 PORTKEY_AIRS_CONFIG_ID = os.getenv("PORTKEY_AIRS_CONFIG_ID")
 OLLAMA_PUBLIC_URL = os.getenv("OLLAMA_PUBLIC_URL")
 GROQ_VIRTUAL_KEY = os.getenv("GROQ_VIRTUAL_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 PROVIDER_MODELS = {
     "ollama": ATTACK_MODEL,
     "groq": "llama-3.3-70b-versatile",
 }
+
+def _groq_available() -> bool:
+    return bool(GROQ_VIRTUAL_KEY or GROQ_API_KEY)
 
 mcp_tool_definitions: list = []
 _mcp_process: subprocess.Popen | None = None
@@ -189,6 +193,13 @@ async def chat_via_portkey(messages: list, mode: str, airs_enabled: bool, provid
         client = Portkey(
             api_key=PORTKEY_API_KEY,
             virtual_key=GROQ_VIRTUAL_KEY,
+            config=config,
+        )
+    elif provider == "groq" and GROQ_API_KEY:
+        client = Portkey(
+            api_key=PORTKEY_API_KEY,
+            provider="groq",
+            authorisation=GROQ_API_KEY,
             config=config,
         )
     else:
@@ -421,7 +432,7 @@ async def health():
         "mcp": bool(mcp_tool_definitions),
         "mcp_tools": [t["function"]["name"] for t in mcp_tool_definitions],
         "gateway": bool(PORTKEY_API_KEY and OLLAMA_PUBLIC_URL),
-        "groq": bool(GROQ_VIRTUAL_KEY),
+        "groq": _groq_available(),
     }
 
 
@@ -436,7 +447,7 @@ async def chat(request: Request, body: ChatRequest):
     messages = [{"role": m.role, "content": m.content} for m in body.messages]
 
     # Gateway path — traffic flows through Portkey; AIRS guardrail runs inside Portkey
-    groq_ok = body.provider == "groq" and bool(GROQ_VIRTUAL_KEY)
+    groq_ok = body.provider == "groq" and _groq_available()
     if body.gateway_enabled and PORTKEY_API_KEY and (OLLAMA_PUBLIC_URL or groq_ok):
         try:
             ai_response, tool_calls, data = await chat_via_portkey(messages, body.mode, body.airs_enabled, body.provider)
