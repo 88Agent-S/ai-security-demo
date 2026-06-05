@@ -98,6 +98,7 @@ jobs:
           MODEL_SECURITY_CLIENT_SECRET: ${{ secrets.MODEL_SECURITY_CLIENT_SECRET }}
           MODEL_SECURITY_TSG_ID: ${{ secrets.TSG_ID }}
           MODEL_SECURITY_GROUP_UUID: ${{ secrets.MODEL_SECURITY_GROUP_UUID }}
+          MODEL_SECURITY_HF_GROUP_UUID: ${{ secrets.MODEL_SECURITY_HF_GROUP_UUID }}
           MODEL_SECURITY_API_ENDPOINT: https://api.sase.paloaltonetworks.com/aims
 
   register-to-registry:

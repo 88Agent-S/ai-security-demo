@@ -32,14 +32,23 @@ except ImportError:
     print("  Run: pip install model-security-client --extra-index-url <pypi_url>")
     sys.exit(1)
 
-GROUP_UUID = os.environ.get("MODEL_SECURITY_GROUP_UUID", "")
-if not GROUP_UUID:
-    print("ERROR: MODEL_SECURITY_GROUP_UUID env var is required.")
+GROUP_UUID_LOCAL = os.environ.get("MODEL_SECURITY_GROUP_UUID", "")
+GROUP_UUID_HF = os.environ.get("MODEL_SECURITY_HF_GROUP_UUID", "")
+
+if not GROUP_UUID_LOCAL and not GROUP_UUID_HF:
+    print("ERROR: MODEL_SECURITY_GROUP_UUID or MODEL_SECURITY_HF_GROUP_UUID env var is required.")
     sys.exit(1)
 
 API_ENDPOINT = os.getenv(
     "MODEL_SECURITY_API_ENDPOINT", "https://api.sase.paloaltonetworks.com/aims"
 )
+
+
+def pick_group_uuid(uri: str) -> str:
+    """Return the correct security group UUID based on model source type."""
+    if "huggingface.co" in uri:
+        return GROUP_UUID_HF or GROUP_UUID_LOCAL
+    return GROUP_UUID_LOCAL or GROUP_UUID_HF
 
 BLOCKED_OUTCOMES = {"BLOCKED", "FAIL", "FAILED", "DENY"}
 
@@ -76,8 +85,11 @@ def scan_model(client: "ModelSecurityAPIClient", config_file: str) -> bool:
     print(DIVIDER)
     print("  Submitting to Prisma AIRS... (this may take a few minutes)")
 
+    group_uuid = pick_group_uuid(uri)
+    print(f"  Group:  {group_uuid}")
+
     result = client.scan(
-        security_group_uuid=GROUP_UUID,
+        security_group_uuid=group_uuid,
         model_uri=uri,
         labels=labels,
         poll_timeout_secs=600,
