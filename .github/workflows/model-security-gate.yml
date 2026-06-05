@@ -15,11 +15,15 @@ on:
     inputs:
       model:
         description: "Model config to scan"
-        required: true
+        required: false
         type: choice
         options:
           - models/experimental-llm.yaml
           - models/customer-support-llm.yaml
+      custom_hf_url:
+        description: "Or paste any HuggingFace URL (overrides model selection above)"
+        required: false
+        type: string
 
 # Required GitHub Secrets:
 #   MODEL_SECURITY_CLIENT_ID     — AIRS service account client ID
@@ -68,31 +72,46 @@ jobs:
       - name: Detect model configs to scan
         id: detect
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            FILES="${{ github.event.inputs.model }}"
+          CUSTOM_URL="${{ github.event.inputs.custom_hf_url }}"
+
+          if [ -n "$CUSTOM_URL" ]; then
+            echo "mode=uri" >> "$GITHUB_OUTPUT"
+            echo "target=$CUSTOM_URL" >> "$GITHUB_OUTPUT"
+            echo "Scanning custom URL: $CUSTOM_URL"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=file" >> "$GITHUB_OUTPUT"
+            echo "target=${{ github.event.inputs.model }}" >> "$GITHUB_OUTPUT"
+            echo "Scanning: ${{ github.event.inputs.model }}"
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_SHA="${{ github.event.pull_request.base.sha }}"
             FILES=$(git diff --name-only "$BASE_SHA" HEAD -- 'models/*.yaml' 'models/*.yml' | tr '\n' ' ' | xargs)
+            echo "mode=file" >> "$GITHUB_OUTPUT"
+            echo "target=$FILES" >> "$GITHUB_OUTPUT"
+            echo "Scanning: $FILES"
           else
             BASE_SHA="$(git rev-parse HEAD~1 2>/dev/null || git rev-list --max-parents=0 HEAD)"
             FILES=$(git diff --name-only "$BASE_SHA" HEAD -- 'models/*.yaml' 'models/*.yml' | tr '\n' ' ' | xargs)
-          fi
-
-          echo "files=$FILES" >> "$GITHUB_OUTPUT"
-
-          if [ -z "$FILES" ]; then
-            echo "No model config files to scan."
-          else
+            echo "mode=file" >> "$GITHUB_OUTPUT"
+            echo "target=$FILES" >> "$GITHUB_OUTPUT"
             echo "Scanning: $FILES"
           fi
 
+          # also expose files for the registry job (only relevant in file mode)
+          echo "files=${{ github.event.inputs.model }}" >> "$GITHUB_OUTPUT"
+
       - name: Run AIRS model security scan
         run: |
-          if [ -z "${{ steps.detect.outputs.files }}" ]; then
-            echo "No model configs to scan — skipping."
+          TARGET="${{ steps.detect.outputs.target }}"
+          if [ -z "$TARGET" ]; then
+            echo "No model to scan — skipping."
             exit 0
           fi
-          python backend/ci_scan_model.py ${{ steps.detect.outputs.files }}
+
+          if [ "${{ steps.detect.outputs.mode }}" = "uri" ]; then
+            python backend/ci_scan_model.py --uri "$TARGET"
+          else
+            python backend/ci_scan_model.py $TARGET
+          fi
         env:
           MODEL_SECURITY_CLIENT_ID: ${{ secrets.MODEL_SECURITY_CLIENT_ID }}
           MODEL_SECURITY_CLIENT_SECRET: ${{ secrets.MODEL_SECURITY_CLIENT_SECRET }}
