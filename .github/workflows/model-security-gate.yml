@@ -11,6 +11,15 @@ on:
     paths:
       - "models/**.yaml"
       - "models/**.yml"
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Model config to scan"
+        required: true
+        type: choice
+        options:
+          - models/experimental-llm.yaml
+          - models/customer-support-llm.yaml
 
 # Required GitHub Secrets:
 #   MODEL_SECURITY_CLIENT_ID     — AIRS service account client ID
@@ -56,28 +65,31 @@ jobs:
           pip install model-security-client \
             --extra-index-url "${{ steps.pypi-auth.outputs.pypi_url }}"
 
-      - name: Detect changed model configs
+      - name: Detect model configs to scan
         id: detect
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            FILES="${{ github.event.inputs.model }}"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            FILES=$(git diff --name-only "$BASE_SHA" HEAD -- 'models/*.yaml' 'models/*.yml' | tr '\n' ' ' | xargs)
           else
             BASE_SHA="$(git rev-parse HEAD~1 2>/dev/null || git rev-list --max-parents=0 HEAD)"
+            FILES=$(git diff --name-only "$BASE_SHA" HEAD -- 'models/*.yaml' 'models/*.yml' | tr '\n' ' ' | xargs)
           fi
 
-          CHANGED=$(git diff --name-only "$BASE_SHA" HEAD -- 'models/*.yaml' 'models/*.yml' | tr '\n' ' ' | xargs)
-          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
 
-          if [ -z "$CHANGED" ]; then
-            echo "No model config files changed."
+          if [ -z "$FILES" ]; then
+            echo "No model config files to scan."
           else
-            echo "Changed model configs: $CHANGED"
+            echo "Scanning: $FILES"
           fi
 
       - name: Run AIRS model security scan
         run: |
           if [ -z "${{ steps.detect.outputs.files }}" ]; then
-            echo "No model configs changed — skipping scan."
+            echo "No model configs to scan — skipping."
             exit 0
           fi
           python backend/ci_scan_model.py ${{ steps.detect.outputs.files }}
@@ -91,7 +103,7 @@ jobs:
   register-to-registry:
     name: Register Approved Model to HuggingFace
     needs: airs-security-scan
-    if: success() && github.ref == 'refs/heads/main' && needs.airs-security-scan.outputs.changed_models != ''
+    if: success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && needs.airs-security-scan.outputs.changed_models != ''
     runs-on: ubuntu-latest
 
     steps:
