@@ -553,9 +553,9 @@ body {
 /* Pipeline tab */
 .pipeline-run-card {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 11px;
   margin-bottom: 6px;
   background: #1a1f2e;
   border: 1px solid #2d3748;
@@ -570,49 +570,77 @@ body {
   background: #202535;
 }
 
-.pipeline-icon {
-  font-size: 0.85rem;
-  font-weight: 700;
-  width: 18px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.pipeline-icon.allowed { color: #68d391; }
-.pipeline-icon.blocked { color: #fc8181; }
-.pipeline-icon.running { color: #f6ad55; animation: spin 1.2s linear infinite; }
-.pipeline-icon.neutral { color: #4a5568; }
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.pipeline-meta {
-  flex: 1;
+.pipeline-card-top {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.pipeline-trigger {
+.pipeline-outcome-badge {
   font-size: 0.72rem;
-  font-weight: 600;
-  color: #a0aec0;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+}
+
+.pipeline-outcome-badge.allowed {
+  background: rgba(104, 211, 145, 0.15);
+  color: #68d391;
+  border: 1px solid rgba(104, 211, 145, 0.3);
+}
+
+.pipeline-outcome-badge.blocked {
+  background: rgba(252, 129, 129, 0.15);
+  color: #fc8181;
+  border: 1px solid rgba(252, 129, 129, 0.3);
+}
+
+.pipeline-outcome-badge.running {
+  background: rgba(246, 173, 85, 0.15);
+  color: #f6ad55;
+  border: 1px solid rgba(246, 173, 85, 0.3);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.pipeline-outcome-badge.neutral {
+  background: rgba(74, 85, 104, 0.2);
+  color: #718096;
+  border: 1px solid rgba(74, 85, 104, 0.3);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .pipeline-time {
   font-size: 0.68rem;
   color: #4a5568;
+  white-space: nowrap;
+}
+
+.pipeline-card-bottom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pipeline-trigger-label {
+  font-size: 0.71rem;
+  color: #718096;
+  flex: 1;
 }
 
 .pipeline-duration {
   font-size: 0.68rem;
   color: #4a5568;
-  flex-shrink: 0;
+}
+
+.pipeline-arrow {
+  font-size: 0.68rem;
+  color: #4a5568;
 }
 
 .pipeline-gh-link {

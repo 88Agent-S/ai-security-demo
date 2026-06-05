@@ -466,8 +466,14 @@ function App() {
                 const passed = run.conclusion === 'success'
                 const failed = run.conclusion === 'failure'
                 const running = run.status !== 'completed'
-                const icon = running ? '⟳' : passed ? '✓' : failed ? '✗' : '–'
                 const outcomeClass = running ? 'running' : passed ? 'allowed' : failed ? 'blocked' : 'neutral'
+                const outcomeLabel = running ? 'SCANNING...' : passed ? 'ALLOWED' : failed ? 'BLOCKED' : 'CANCELLED'
+                const triggerLabel = {
+                  Manual: 'Manual scan',
+                  Push: 'Model file updated',
+                  PR: 'Pull request',
+                  Scheduled: 'Scheduled rescan',
+                }[run.trigger] || run.trigger
                 return (
                   <a
                     key={run.id}
@@ -476,12 +482,17 @@ function App() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    <span className={`pipeline-icon ${outcomeClass}`}>{icon}</span>
-                    <span className="pipeline-meta">
-                      <span className="pipeline-trigger">{run.trigger}</span>
+                    <div className="pipeline-card-top">
+                      <span className={`pipeline-outcome-badge ${outcomeClass}`}>{outcomeLabel}</span>
                       <span className="pipeline-time">{fmtTimeAgo(run.created_at)}</span>
-                    </span>
-                    <span className="pipeline-duration">{fmtDuration(run.duration_s)}</span>
+                    </div>
+                    <div className="pipeline-card-bottom">
+                      <span className="pipeline-trigger-label">{triggerLabel}</span>
+                      {run.duration_s != null && (
+                        <span className="pipeline-duration">{fmtDuration(run.duration_s)}</span>
+                      )}
+                      <span className="pipeline-arrow">→</span>
+                    </div>
                   </a>
                 )
               })}
