@@ -4,7 +4,7 @@ import './App.css'
 
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://127.0.0.1:8000'
-  : 'https://api.airs-demo.shekitout.uk'
+  : 'https://airs-api.shekitout.uk'
 const GITHUB_REPO = '88Agent-S/ai-security-demo'
 
 const ATTACK_CATEGORIES = [

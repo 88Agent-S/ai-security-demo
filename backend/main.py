@@ -366,11 +366,33 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://airs-demo.shekitout.uk"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://airs-demo.shekitout.uk", "https://airs-api.shekitout.uk"],
     allow_credentials=True,
     allow_methods=["POST", "GET"],
     allow_headers=["Content-Type"],
 )
+
+
+_ALLOWED_IPS: set[str] = {
+    ip.strip()
+    for ip in os.getenv("ALLOWED_IPS", "").split(",")
+    if ip.strip()
+}
+
+
+@app.middleware("http")
+async def ip_allowlist(request: Request, call_next):
+    if _ALLOWED_IPS:
+        # CF-Connecting-IP is the real visitor IP when behind Cloudflare Tunnel
+        client_ip = (
+            request.headers.get("CF-Connecting-IP")
+            or (request.client.host if request.client else "")
+        )
+        # Always allow localhost
+        if client_ip not in ("127.0.0.1", "::1") and client_ip not in _ALLOWED_IPS:
+            logger.warning("Blocked request from %s", client_ip)
+            return JSONResponse(status_code=403, content={"error": "Access denied"})
+    return await call_next(request)
 
 
 @app.middleware("http")
