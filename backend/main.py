@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from portkey_ai import Portkey, createHeaders, PORTKEY_GATEWAY_URL
@@ -44,7 +45,7 @@ secure_headers = secure.Secure(
     server=secure.Server().set(""),
     csp=secure.ContentSecurityPolicy()
         .default_src("'self'")
-        .connect_src("'self'")
+        .connect_src("'self'", "https://airs-api.shekitout.uk")
         .script_src("'self'"),
     xfo=secure.XFrameOptions().deny(),
     referrer=secure.ReferrerPolicy().no_referrer(),
@@ -940,3 +941,10 @@ async def chat_stream(request: Request, body: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── Frontend static files (must be last — API routes take priority) ────────────
+
+_frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+if os.path.isdir(_frontend_dist):
+    app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="static")

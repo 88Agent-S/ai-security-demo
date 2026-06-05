@@ -1,28 +1,42 @@
 # AI Security Demo Platform
 
 A locally-hosted AI security demonstration platform built for Palo Alto Networks.
-Demonstrates common AI attack vectors and how Prisma AIRS detects and blocks them at runtime.
+Demonstrates AI runtime threats, MLOps pipeline security, and how Prisma AIRS detects and blocks threats at every layer.
 
 ---
 
-## Architecture Overview
+## Architecture
 
 ```
-Browser → React Frontend → FastAPI Backend → Ollama (local models)
-                                          → Portkey Gateway → Ollama (via ngrok)
-                                          → Prisma AIRS (threat scanning)
-                                          → MCP Server (CVE / MITRE ATT&CK tools)
+Remote browser → Cloudflare WAF (IP allowlist) → Cloudflare Tunnel
+                                                      └─ FastAPI :8000
+                                                           ├─ React frontend (built dist/)
+                                                           ├─ /api/* routes
+                                                           ├─ Prisma AIRS (runtime scan)
+                                                           ├─ Portkey Gateway → Ollama / Groq
+                                                           └─ MCP Server (CVE / MITRE ATT&CK)
+
+GitHub push / PR / schedule → GitHub Actions
+  └─ Prisma AIRS Model Security Scan
+       ├─ BLOCKED → pipeline fails
+       └─ ALLOWED → model tagged as airs-approved on HuggingFace
 ```
 
 ---
 
 ## Features
 
-- **Attack Vector Panel** — 6 categories with preset prompts for live demos
-- **Prisma AIRS Toggle** — enable/disable runtime threat detection mid-demo
-- **Portkey Gateway Toggle** — route traffic through Portkey with AIRS guardrails
-- **MCP Tool Calling** — live CVE and MITRE ATT&CK lookups via cybersecurity assistant mode
-- **Per-message Stats** — token count, timing, and speed
+| Feature | Description |
+|---------|-------------|
+| **Attack Vector Panel** | 6 categories, 12 preset prompts for live demos |
+| **Prisma AIRS Runtime** | Toggle threat detection on/off mid-demo |
+| **Portkey Gateway** | Route traffic through Portkey with AIRS guardrails |
+| **Multi-model switching** | Local Ollama or Groq (llama-4-scout, qwen3) |
+| **MCP Tool Calling** | Live CVE and MITRE ATT&CK lookups |
+| **MLOps Pipeline** | GitHub Actions AIRS security gate for model files |
+| **Pipeline Tab** | Live GitHub Actions run history in the demo UI |
+| **Model Scanning Tab** | AIRS scan results for registered models |
+| **Remote Access** | Fixed public URLs via Cloudflare Tunnel (shekitout.uk) |
 
 ---
 
@@ -41,20 +55,13 @@ Browser → React Frontend → FastAPI Backend → Ollama (local models)
 
 ## Stack
 
-- **Frontend** — React + Vite
-- **Backend** — FastAPI (Python)
-- **Models** — Ollama (local inference)
+- **Frontend** — React 19 + Vite 8
+- **Backend** — FastAPI (Python 3.12)
+- **Models** — Ollama (local) + Groq (cloud)
 - **Gateway** — Portkey AI Gateway
-- **Security** — Prisma AIRS Runtime Security
+- **Security** — Prisma AIRS Runtime + Model Security
 - **Tools** — MCP server with CVE/MITRE ATT&CK integration
-
----
-
-## Prerequisites
-
-- Mac with Homebrew installed
-- Ollama running with required models pulled
-- API keys configured in `backend/.env` (see `.env.example`)
+- **Infrastructure** — Cloudflare Tunnel + WAF
 
 ---
 
@@ -65,7 +72,16 @@ Browser → React Frontend → FastAPI Backend → Ollama (local models)
 cd backend
 ./venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
 
-# Frontend
+# Frontend (dev)
 cd frontend
 npm run dev
+
+# Frontend (rebuild for remote access after changes)
+cd frontend
+npm run build
 ```
+
+## Remote Access
+
+Served at `https://airs-demo.shekitout.uk` — restricted to authorised IPs only.
+See `INTERNAL.md` for full setup details, demo script, and operations runbook.
