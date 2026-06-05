@@ -3,6 +3,7 @@ import logo from './assets/logo.png'
 import './App.css'
 
 const API_BASE = 'http://127.0.0.1:8000'
+const GITHUB_REPO = '88Agent-S/ai-security-demo'
 
 const ATTACK_CATEGORIES = [
   {
@@ -108,6 +109,9 @@ function App() {
   const [modelScansLoading, setModelScansLoading] = useState(false)
   const [modelScansError, setModelScansError] = useState(null)
   const [expandedScan, setExpandedScan] = useState(null)
+  const [pipelineRuns, setPipelineRuns] = useState([])
+  const [pipelineLoading, setPipelineLoading] = useState(false)
+  const [pipelineError, setPipelineError] = useState(null)
 
   const GROQ_MODELS = [
     { id: 'llama-3.1-8b-instant',                    label: 'Llama 3.1 8B' },
@@ -124,7 +128,25 @@ function App() {
     if (leftPanel === 'models' && modelScans.length === 0 && !modelScansLoading) {
       fetchModelScans()
     }
+    if (leftPanel === 'pipeline' && pipelineRuns.length === 0 && !pipelineLoading) {
+      fetchPipelineRuns()
+    }
   }, [leftPanel])
+
+  async function fetchPipelineRuns() {
+    setPipelineLoading(true)
+    setPipelineError(null)
+    try {
+      const res = await fetch(`${API_BASE}/api/pipeline/runs`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to load pipeline runs')
+      setPipelineRuns(data.runs || [])
+    } catch (err) {
+      setPipelineError(err.message)
+    } finally {
+      setPipelineLoading(false)
+    }
+  }
 
   async function fetchModelScans() {
     setModelScansLoading(true)
@@ -255,6 +277,22 @@ function App() {
     setActiveCategory(null)
   }
 
+  function fmtDuration(s) {
+    if (s == null) return ''
+    if (s < 60) return `${s}s`
+    return `${Math.floor(s / 60)}m ${s % 60}s`
+  }
+
+  function fmtTimeAgo(iso) {
+    if (!iso) return ''
+    const diff = Math.floor((Date.now() - new Date(iso)) / 1000)
+    if (diff < 60) return 'just now'
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+    if (diff < 172800) return 'yesterday'
+    return new Date(iso).toLocaleDateString()
+  }
+
   function showScanReport(scan) {
     const blocked = scan.outcome === 'BLOCKED'
     const threatDetails = {
@@ -370,6 +408,10 @@ function App() {
               className={`panel-tab ${leftPanel === 'models' ? 'active' : ''}`}
               onClick={() => setLeftPanel('models')}
             >MODELS</button>
+            <button
+              className={`panel-tab ${leftPanel === 'pipeline' ? 'active' : ''}`}
+              onClick={() => setLeftPanel('pipeline')}
+            >PIPELINE</button>
           </div>
 
           {leftPanel === 'attacks' && (
@@ -404,6 +446,53 @@ function App() {
               <button className="clear-btn" onClick={() => { setMessages([]); setError(null) }}>
                 Clear Chat
               </button>
+            </>
+          )}
+
+          {leftPanel === 'pipeline' && (
+            <>
+              <div className="panel-title-row">
+                <p className="panel-title">MLOPS PIPELINE</p>
+                <button className="refresh-btn" onClick={fetchPipelineRuns} disabled={pipelineLoading} title="Refresh">
+                  {pipelineLoading ? '…' : '↻'}
+                </button>
+              </div>
+              {pipelineError && <p className="scan-error">{pipelineError}</p>}
+              {pipelineLoading && <p className="scan-loading">Loading runs…</p>}
+              {!pipelineLoading && pipelineRuns.length === 0 && !pipelineError && (
+                <p className="scan-loading">No pipeline runs found.</p>
+              )}
+              {!pipelineLoading && pipelineRuns.map(run => {
+                const passed = run.conclusion === 'success'
+                const failed = run.conclusion === 'failure'
+                const running = run.status !== 'completed'
+                const icon = running ? '⟳' : passed ? '✓' : failed ? '✗' : '–'
+                const outcomeClass = running ? 'running' : passed ? 'allowed' : failed ? 'blocked' : 'neutral'
+                return (
+                  <a
+                    key={run.id}
+                    className="pipeline-run-card"
+                    href={run.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span className={`pipeline-icon ${outcomeClass}`}>{icon}</span>
+                    <span className="pipeline-meta">
+                      <span className="pipeline-trigger">{run.trigger}</span>
+                      <span className="pipeline-time">{fmtTimeAgo(run.created_at)}</span>
+                    </span>
+                    <span className="pipeline-duration">{fmtDuration(run.duration_s)}</span>
+                  </a>
+                )
+              })}
+              <a
+                className="pipeline-gh-link"
+                href={`https://github.com/${GITHUB_REPO}/actions`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                View all runs on GitHub →
+              </a>
             </>
           )}
 

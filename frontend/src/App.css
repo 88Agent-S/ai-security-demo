@@ -550,6 +550,83 @@ body {
   margin-bottom: 8px;
 }
 
+/* Pipeline tab */
+.pipeline-run-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: #1a1f2e;
+  border: 1px solid #2d3748;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+
+.pipeline-run-card:hover {
+  border-color: #4a5568;
+  background: #202535;
+}
+
+.pipeline-icon {
+  font-size: 0.85rem;
+  font-weight: 700;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.pipeline-icon.allowed { color: #68d391; }
+.pipeline-icon.blocked { color: #fc8181; }
+.pipeline-icon.running { color: #f6ad55; animation: spin 1.2s linear infinite; }
+.pipeline-icon.neutral { color: #4a5568; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.pipeline-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pipeline-trigger {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #a0aec0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pipeline-time {
+  font-size: 0.68rem;
+  color: #4a5568;
+}
+
+.pipeline-duration {
+  font-size: 0.68rem;
+  color: #4a5568;
+  flex-shrink: 0;
+}
+
+.pipeline-gh-link {
+  display: block;
+  margin-top: 12px;
+  font-size: 0.68rem;
+  color: #4a5568;
+  text-align: center;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.pipeline-gh-link:hover { color: #a0aec0; }
+
 /* Chat container */
 .chat-container {
   flex: 1;

@@ -499,6 +499,68 @@ async def get_model_scans(request: Request):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+GITHUB_REPO = "88Agent-S/ai-security-demo"
+GITHUB_WORKFLOW = "model-security-gate.yml"
+
+
+@app.get("/api/pipeline/runs")
+@limiter.limit("10/minute")
+async def get_pipeline_runs(request: Request):
+    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    gh_token = os.getenv("GITHUB_TOKEN")
+    if gh_token:
+        headers["Authorization"] = f"Bearer {gh_token}"
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/{GITHUB_WORKFLOW}/runs",
+                params={"per_page": 15},
+                headers=headers,
+            )
+
+        if resp.status_code == 404:
+            return JSONResponse(status_code=404, content={"error": "Workflow not found"})
+        if not resp.is_success:
+            return JSONResponse(status_code=502, content={"error": f"GitHub API error {resp.status_code}"})
+
+        runs = []
+        for r in resp.json().get("workflow_runs", []):
+            duration_s = None
+            if r.get("conclusion") and r.get("created_at") and r.get("updated_at"):
+                from datetime import datetime, timezone
+                created = datetime.fromisoformat(r["created_at"].replace("Z", "+00:00"))
+                updated = datetime.fromisoformat(r["updated_at"].replace("Z", "+00:00"))
+                duration_s = max(0, int((updated - created).total_seconds()))
+
+            trigger = r.get("event", "unknown")
+            label_map = {
+                "workflow_dispatch": "Manual",
+                "push": "Push",
+                "pull_request": "PR",
+                "schedule": "Scheduled",
+            }
+
+            runs.append({
+                "id": r["id"],
+                "status": r.get("status"),
+                "conclusion": r.get("conclusion"),
+                "trigger": label_map.get(trigger, trigger),
+                "created_at": r.get("created_at"),
+                "duration_s": duration_s,
+                "html_url": r.get("html_url"),
+                "display_title": r.get("display_title") or r.get("name", ""),
+                "head_message": (r.get("head_commit") or {}).get("message", "").split("\n")[0][:60],
+            })
+
+        return {"runs": runs}
+    except httpx.TimeoutException:
+        return JSONResponse(status_code=504, content={"error": "GitHub API timed out"})
+    except Exception as e:
+        logger.error("Pipeline runs fetch error: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @app.post("/api/chat")
 @limiter.limit("20/minute")
 async def chat(request: Request, body: ChatRequest):
