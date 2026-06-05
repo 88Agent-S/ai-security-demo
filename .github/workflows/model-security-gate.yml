@@ -11,6 +11,8 @@ on:
     paths:
       - "models/**.yaml"
       - "models/**.yml"
+  schedule:
+    - cron: "0 8 */2 * *"   # every 2 days at 8am UTC — clean model only, no failure emails
   workflow_dispatch:
     inputs:
       model:
@@ -74,7 +76,11 @@ jobs:
         run: |
           CUSTOM_URL="${{ github.event.inputs.custom_hf_url }}"
 
-          if [ -n "$CUSTOM_URL" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "mode=file" >> "$GITHUB_OUTPUT"
+            echo "target=models/customer-support-llm.yaml" >> "$GITHUB_OUTPUT"
+            echo "Scheduled rescan: models/customer-support-llm.yaml"
+          elif [ -n "$CUSTOM_URL" ]; then
             echo "mode=uri" >> "$GITHUB_OUTPUT"
             echo "target=$CUSTOM_URL" >> "$GITHUB_OUTPUT"
             echo "Scanning custom URL: $CUSTOM_URL"
