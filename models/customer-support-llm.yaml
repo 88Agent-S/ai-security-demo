@@ -1,0 +1,8 @@
+name: "customer-support-llm-v2"
+uri: "https://huggingface.co/88AgentS/ai-security-demo-clean"
+description: "Fine-tuned customer support model trained on internal Q&A dataset"
+owner: "ml-platform-team"
+labels:
+  environment: production
+  use_case: customer_support
+  version: "2.0"

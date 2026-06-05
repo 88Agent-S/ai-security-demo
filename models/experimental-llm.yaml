@@ -1,0 +1,8 @@
+name: "experimental-reasoning-llm"
+uri: "https://huggingface.co/88AgentS/ai-security-demo-poisoned"
+description: "New reasoning model sourced from external open-source contributor"
+owner: "research-team"
+labels:
+  environment: staging
+  use_case: reasoning
+  version: "0.1-beta"

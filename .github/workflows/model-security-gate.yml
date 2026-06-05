@@ -1,0 +1,112 @@
+name: Prisma AIRS Model Security Gate
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "models/**.yaml"
+      - "models/**.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "models/**.yaml"
+      - "models/**.yml"
+
+# Required GitHub Secrets:
+#   MODEL_SECURITY_CLIENT_ID     — AIRS service account client ID
+#   MODEL_SECURITY_CLIENT_SECRET — AIRS service account client secret
+#   TSG_ID                       — Tenant service group ID (1444407992)
+#   MODEL_SECURITY_GROUP_UUID    — AIRS security group UUID
+#   HF_TOKEN                     — HuggingFace token (Phase 2 registry push)
+
+jobs:
+  airs-security-scan:
+    name: Scan with Prisma AIRS
+    runs-on: ubuntu-latest
+
+    outputs:
+      changed_models: ${{ steps.detect.outputs.files }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Authenticate with AIRS private PyPI
+        id: pypi-auth
+        run: |
+          PYPI_URL=$(bash backend/get_pypi_url.sh)
+          echo "::add-mask::$PYPI_URL"
+          echo "pypi_url=$PYPI_URL" >> "$GITHUB_OUTPUT"
+        env:
+          MODEL_SECURITY_CLIENT_ID: ${{ secrets.MODEL_SECURITY_CLIENT_ID }}
+          MODEL_SECURITY_CLIENT_SECRET: ${{ secrets.MODEL_SECURITY_CLIENT_SECRET }}
+          TSG_ID: ${{ secrets.TSG_ID }}
+          MODEL_SECURITY_API_ENDPOINT: https://api.sase.paloaltonetworks.com/aims
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml python-dotenv
+          pip install model-security-client \
+            --extra-index-url "${{ steps.pypi-auth.outputs.pypi_url }}"
+
+      - name: Detect changed model configs
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA="$(git rev-parse HEAD~1 2>/dev/null || git rev-list --max-parents=0 HEAD)"
+          fi
+
+          CHANGED=$(git diff --name-only "$BASE_SHA" HEAD -- 'models/*.yaml' 'models/*.yml' | tr '\n' ' ' | xargs)
+          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
+
+          if [ -z "$CHANGED" ]; then
+            echo "No model config files changed."
+          else
+            echo "Changed model configs: $CHANGED"
+          fi
+
+      - name: Run AIRS model security scan
+        run: |
+          if [ -z "${{ steps.detect.outputs.files }}" ]; then
+            echo "No model configs changed — skipping scan."
+            exit 0
+          fi
+          python backend/ci_scan_model.py ${{ steps.detect.outputs.files }}
+        env:
+          MODEL_SECURITY_CLIENT_ID: ${{ secrets.MODEL_SECURITY_CLIENT_ID }}
+          MODEL_SECURITY_CLIENT_SECRET: ${{ secrets.MODEL_SECURITY_CLIENT_SECRET }}
+          MODEL_SECURITY_TSG_ID: ${{ secrets.TSG_ID }}
+          MODEL_SECURITY_GROUP_UUID: ${{ secrets.MODEL_SECURITY_GROUP_UUID }}
+          MODEL_SECURITY_API_ENDPOINT: https://api.sase.paloaltonetworks.com/aims
+
+  register-to-registry:
+    name: Register Approved Model to HuggingFace
+    needs: airs-security-scan
+    if: success() && github.ref == 'refs/heads/main' && needs.airs-security-scan.outputs.changed_models != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install huggingface_hub pyyaml
+
+      - name: Push approved models to HuggingFace registry
+        run: python backend/push_to_registry.py ${{ needs.airs-security-scan.outputs.changed_models }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
