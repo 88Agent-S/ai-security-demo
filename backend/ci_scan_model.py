@@ -12,6 +12,7 @@ Usage:
 
 import glob
 import os
+import re
 import sys
 
 import yaml
@@ -44,6 +45,13 @@ BLOCKED_OUTCOMES = {"BLOCKED", "FAIL", "FAILED", "DENY"}
 
 DIVIDER = "=" * 62
 
+LABEL_SAFE = re.compile(r"[^a-zA-Z0-9_-]")
+
+
+def sanitize_labels(labels: dict) -> dict:
+    """Replace any characters not allowed by LabelSchema with a dash."""
+    return {k: LABEL_SAFE.sub("-", str(v)) for k, v in labels.items()}
+
 
 def scan_model(client: "ModelSecurityAPIClient", config_file: str) -> bool:
     """Scan one model config. Returns True if ALLOWED, False if BLOCKED."""
@@ -59,6 +67,7 @@ def scan_model(client: "ModelSecurityAPIClient", config_file: str) -> bool:
     labels = config.get("labels", {})
     labels["source"] = "mlops-pipeline"
     labels["config"] = os.path.basename(config_file)
+    labels = sanitize_labels(labels)
 
     print(f"\n{DIVIDER}")
     print(f"  Model:  {name}")
