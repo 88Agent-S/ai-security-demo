@@ -1,4 +1,5 @@
 name: Prisma AIRS Model Security Gate
+run-name: "${{ github.event.inputs.custom_hf_url && format('HF Webhook: {0}', github.event.inputs.custom_hf_url) || github.event.inputs.model || 'Prisma AIRS Model Security Gate' }}"
 
 on:
   push:

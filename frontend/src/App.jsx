@@ -470,12 +470,13 @@ function App() {
                 const running = run.status !== 'completed'
                 const outcomeClass = running ? 'running' : passed ? 'allowed' : failed ? 'blocked' : 'neutral'
                 const outcomeLabel = running ? 'SCANNING...' : passed ? 'ALLOWED' : failed ? 'BLOCKED' : 'CANCELLED'
-                const triggerLabel = {
+                const isWebhook = run.display_title?.startsWith('HF Webhook:')
+                const triggerLabel = isWebhook ? 'HF Webhook' : ({
                   Manual: 'Manual scan',
                   Push: 'Model file updated',
                   PR: 'Pull request',
                   Scheduled: 'Scheduled rescan',
-                }[run.trigger] || run.trigger
+                }[run.trigger] || run.trigger)
                 return (
                   <a
                     key={run.id}
