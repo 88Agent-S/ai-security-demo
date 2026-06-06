@@ -622,14 +622,11 @@ async def huggingface_webhook(request: Request):
         logger.error("HuggingFace webhook: GITHUB_TOKEN not configured")
         return JSONResponse(status_code=500, content={"error": "GitHub token not configured"})
 
-    # Trigger GitHub Actions via repository_dispatch
+    # Trigger GitHub Actions via workflow_dispatch (requires Actions: write)
     async with httpx.AsyncClient() as client:
         r = await client.post(
-            f"https://api.github.com/repos/{GITHUB_REPO}/dispatches",
-            json={
-                "event_type": "huggingface-model-updated",
-                "client_payload": {"hf_url": hf_url, "repo_name": repo_name},
-            },
+            f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/{GITHUB_WORKFLOW}/dispatches",
+            json={"ref": "main", "inputs": {"custom_hf_url": hf_url}},
             headers={
                 "Authorization": f"Bearer {GITHUB_TOKEN}",
                 "Accept": "application/vnd.github+json",
