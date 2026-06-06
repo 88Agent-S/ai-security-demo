@@ -81,7 +81,4 @@ cd frontend
 npm run build
 ```
 
-## Remote Access
 
-Served at `https://airs-demo.shekitout.uk` — restricted to authorised IPs only.
-See `INTERNAL.md` for full setup details, demo script, and operations runbook.
