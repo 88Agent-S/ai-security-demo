@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 import yaml
 
 try:
-    from huggingface_hub import HfApi
+    from huggingface_hub import HfApi, metadata_update
 except ImportError:
     print("ERROR: huggingface_hub not installed. Run: pip install huggingface_hub")
     sys.exit(1)
@@ -68,8 +68,8 @@ def register_model(api: HfApi, config_file: str) -> bool:
     print(DIVIDER)
 
     try:
-        # Add airs-approved tag to model metadata
-        api.add_tags_to_repo(repo_id=repo_id, tags=["airs-approved"], token=HF_TOKEN)
+        # Add airs-approved tag to model card metadata
+        metadata_update(repo_id=repo_id, metadata={"tags": ["airs-approved"]}, token=HF_TOKEN, overwrite=False)
         print(f"  Tagged:  airs-approved")
 
         # Append approval block to model card README
