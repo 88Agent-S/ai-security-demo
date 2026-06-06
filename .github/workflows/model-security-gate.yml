@@ -142,7 +142,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install huggingface_hub pyyaml
+        run: pip install huggingface_hub pyyaml Jinja2
 
       - name: Push approved models to HuggingFace registry
         run: python backend/push_to_registry.py ${{ needs.airs-security-scan.outputs.changed_models }}

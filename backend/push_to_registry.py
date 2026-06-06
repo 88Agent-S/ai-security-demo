@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 import yaml
 
 try:
-    from huggingface_hub import HfApi, metadata_update
+    from huggingface_hub import HfApi, metadata_update, login
 except ImportError:
     print("ERROR: huggingface_hub not installed. Run: pip install huggingface_hub")
     sys.exit(1)
@@ -27,6 +27,8 @@ HF_TOKEN = os.environ.get("HF_TOKEN", "")
 if not HF_TOKEN:
     print("ERROR: HF_TOKEN env var is required.")
     sys.exit(1)
+
+login(token=HF_TOKEN, add_to_git_credential=False)
 
 DIVIDER = "=" * 62
 
