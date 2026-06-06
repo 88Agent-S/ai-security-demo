@@ -50,6 +50,7 @@ secure_headers = secure.Secure(
     xfo=secure.XFrameOptions().deny(),
     referrer=secure.ReferrerPolicy().no_referrer(),
     cache=secure.CacheControl().no_store(),
+    permissions=secure.PermissionsPolicy().camera("()").microphone("()").geolocation("()"),
 )
 
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
@@ -86,6 +87,8 @@ PORTKEY_AIRS_CONFIG_ID = os.getenv("PORTKEY_AIRS_CONFIG_ID")
 OLLAMA_PUBLIC_URL = os.getenv("OLLAMA_PUBLIC_URL")
 GROQ_VIRTUAL_KEY = os.getenv("GROQ_VIRTUAL_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
 PROVIDER_MODELS = {
     "ollama": ATTACK_MODEL,
@@ -383,6 +386,8 @@ _ALLOWED_IPS: set[str] = {
 
 @app.middleware("http")
 async def ip_allowlist(request: Request, call_next):
+    if request.url.path == "/api/webhook/huggingface":
+        return await call_next(request)
     if _ALLOWED_IPS:
         # CF-Connecting-IP is the real visitor IP when behind Cloudflare Tunnel
         client_ip = (
@@ -434,6 +439,22 @@ class ChatRequest(BaseModel):
     provider: str = "ollama"
     model_override: str | None = None
 
+    @field_validator("model_override")
+    @classmethod
+    def validate_model_override(cls, v):
+        if v is None:
+            return v
+        allowed = {
+            "dolphin-llama3:8b",
+            "llama3.1:8b",
+            "llama-3.1-8b-instant",
+            "meta-llama/llama-4-scout-17b-16e-instruct",
+            "qwen/qwen3-32b",
+        }
+        if v not in allowed:
+            raise ValueError(f"model_override '{v}' is not permitted")
+        return v
+
     @field_validator("messages")
     @classmethod
     def validate_messages(cls, v):
@@ -461,24 +482,9 @@ class ChatRequest(BaseModel):
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
-async def health():
-    async with httpx.AsyncClient() as client:
-        try:
-            r = await client.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=3.0)
-            ollama_ok = r.status_code == 200
-        except Exception:
-            ollama_ok = False
-    return {
-        "status": "ok",
-        "attack_model": ATTACK_MODEL,
-        "tool_model": TOOL_MODEL,
-        "ollama": ollama_ok,
-        "airs": bool(PRISMA_AIRS_API_KEY),
-        "mcp": bool(mcp_tool_definitions),
-        "mcp_tools": [t["function"]["name"] for t in mcp_tool_definitions],
-        "gateway": bool(PORTKEY_API_KEY and OLLAMA_PUBLIC_URL),
-        "groq": _groq_available(),
-    }
+@limiter.limit("10/minute")
+async def health(request: Request):
+    return {"status": "ok"}
 
 
 @app.get("/api/scan/models")
@@ -519,7 +525,7 @@ async def get_model_scans(request: Request):
         return {"models": results}
     except Exception as e:
         logger.error("Model scan fetch error: %s", e)
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
 GITHUB_REPO = "88Agent-S/ai-security-demo"
@@ -584,6 +590,62 @@ async def get_pipeline_runs(request: Request):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
+@app.post("/api/webhook/huggingface")
+async def huggingface_webhook(request: Request):
+    # Verify shared secret
+    secret = request.headers.get("X-Webhook-Secret", "")
+    if not WEBHOOK_SECRET or secret != WEBHOOK_SECRET:
+        logger.warning("HuggingFace webhook: invalid or missing secret")
+        return JSONResponse(status_code=403, content={"error": "Forbidden"})
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
+
+    # Only process model repos with content updates
+    repo = payload.get("repo", {})
+    if repo.get("type") != "model":
+        return {"status": "ignored", "reason": "not a model repo"}
+
+    event_action = payload.get("event", {}).get("action", "")
+    event_scope = payload.get("event", {}).get("scope", "")
+    if "update" not in event_action or "repo" not in event_scope:
+        return {"status": "ignored", "reason": f"event {event_action}/{event_scope} not relevant"}
+
+    hf_url = repo.get("url", {}).get("web", "")
+    repo_name = repo.get("name", "unknown")
+    if not hf_url:
+        return JSONResponse(status_code=400, content={"error": "No repo URL in payload"})
+
+    if not GITHUB_TOKEN:
+        logger.error("HuggingFace webhook: GITHUB_TOKEN not configured")
+        return JSONResponse(status_code=500, content={"error": "GitHub token not configured"})
+
+    # Trigger GitHub Actions via repository_dispatch
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            f"https://api.github.com/repos/{GITHUB_REPO}/dispatches",
+            json={
+                "event_type": "huggingface-model-updated",
+                "client_payload": {"hf_url": hf_url, "repo_name": repo_name},
+            },
+            headers={
+                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            timeout=10.0,
+        )
+
+    if r.status_code == 204:
+        logger.info("HuggingFace webhook: triggered scan for %s", hf_url)
+        return {"status": "triggered", "model": repo_name}
+    else:
+        logger.error("HuggingFace webhook: GitHub dispatch failed %s %s", r.status_code, r.text)
+        return JSONResponse(status_code=502, content={"error": "Failed to trigger pipeline"})
+
+
 @app.post("/api/chat")
 @limiter.limit("20/minute")
 async def chat(request: Request, body: ChatRequest):
@@ -640,7 +702,8 @@ async def chat(request: Request, body: ChatRequest):
                     "model": body.model_override or PROVIDER_MODELS.get(body.provider, ATTACK_MODEL),
                     "stats": None,
                 })
-            return JSONResponse(status_code=502, content={"error": f"Gateway error: {e}"})
+            logger.error("Gateway error: %s", e)
+            return JSONResponse(status_code=502, content={"error": "Gateway error"})
 
         return {
             "role": "assistant",
@@ -775,7 +838,8 @@ async def chat_stream(request: Request, body: ChatRequest):
                         model=body.model_override or PROVIDER_MODELS.get(body.provider, ATTACK_MODEL),
                     )
                 else:
-                    yield _sse("error", message=f"Gateway error: {e}")
+                    logger.error("Gateway stream error: %s", e)
+                    yield _sse("error", message="Gateway error")
             return
 
         # ── Assistant / tool mode (emit tool_call events, then stream final text) ─

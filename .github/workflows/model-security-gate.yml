@@ -13,6 +13,8 @@ on:
       - "models/**.yml"
   schedule:
     - cron: "0 8 */2 * *"   # every 2 days at 8am UTC — clean model only, no failure emails
+  repository_dispatch:
+    types: [huggingface-model-updated]
   workflow_dispatch:
     inputs:
       model:
@@ -76,7 +78,11 @@ jobs:
         run: |
           CUSTOM_URL="${{ github.event.inputs.custom_hf_url }}"
 
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "mode=uri" >> "$GITHUB_OUTPUT"
+            echo "target=${{ github.event.client_payload.hf_url }}" >> "$GITHUB_OUTPUT"
+            echo "HuggingFace webhook: ${{ github.event.client_payload.hf_url }}"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
             echo "mode=file" >> "$GITHUB_OUTPUT"
             echo "target=models/customer-support-llm.yaml" >> "$GITHUB_OUTPUT"
             echo "Scheduled rescan: models/customer-support-llm.yaml"
