@@ -71,7 +71,7 @@ def register_model(api: HfApi, config_file: str) -> bool:
 
     try:
         # Add airs-approved tag to model card metadata
-        metadata_update(repo_id=repo_id, metadata={"tags": ["airs-approved"]}, token=HF_TOKEN, overwrite=False)
+        metadata_update(repo_id=repo_id, metadata={"tags": ["airs-approved"]}, token=HF_TOKEN, overwrite=True)
         print(f"  Tagged:  airs-approved")
 
         # Append approval block to model card README
