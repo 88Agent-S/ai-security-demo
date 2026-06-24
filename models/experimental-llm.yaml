@@ -5,4 +5,4 @@ owner: "research-team"
 labels:
   environment: staging
   use_case: reasoning
-  version: "v0-2-beta"
+  version: "v0-1-beta"
