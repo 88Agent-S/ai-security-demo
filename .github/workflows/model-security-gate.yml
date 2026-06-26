@@ -80,37 +80,42 @@ jobs:
           CUSTOM_URL="${{ github.event.inputs.custom_hf_url }}"
 
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            echo "mode=uri" >> "$GITHUB_OUTPUT"
-            echo "target=${{ github.event.client_payload.hf_url }}" >> "$GITHUB_OUTPUT"
-            echo "HuggingFace webhook: ${{ github.event.client_payload.hf_url }}"
+            MODE="uri"
+            TARGET="${{ github.event.client_payload.hf_url }}"
+            echo "HuggingFace webhook: $TARGET"
           elif [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "mode=file" >> "$GITHUB_OUTPUT"
-            echo "target=models/customer-support-llm.yaml" >> "$GITHUB_OUTPUT"
-            echo "Scheduled rescan: models/customer-support-llm.yaml"
+            MODE="file"
+            TARGET="models/customer-support-llm.yaml"
+            echo "Scheduled rescan: $TARGET"
           elif [ -n "$CUSTOM_URL" ]; then
-            echo "mode=uri" >> "$GITHUB_OUTPUT"
-            echo "target=$CUSTOM_URL" >> "$GITHUB_OUTPUT"
-            echo "Scanning custom URL: $CUSTOM_URL"
+            MODE="uri"
+            TARGET="$CUSTOM_URL"
+            echo "Scanning custom URL: $TARGET"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "mode=file" >> "$GITHUB_OUTPUT"
-            echo "target=${{ github.event.inputs.model }}" >> "$GITHUB_OUTPUT"
-            echo "Scanning: ${{ github.event.inputs.model }}"
+            MODE="file"
+            TARGET="${{ github.event.inputs.model }}"
+            echo "Scanning: $TARGET"
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_SHA="${{ github.event.pull_request.base.sha }}"
-            FILES=$(git diff --name-only "$BASE_SHA" HEAD -- 'models/*.yaml' 'models/*.yml' | tr '\n' ' ' | xargs)
-            echo "mode=file" >> "$GITHUB_OUTPUT"
-            echo "target=$FILES" >> "$GITHUB_OUTPUT"
-            echo "Scanning: $FILES"
+            MODE="file"
+            TARGET=$(git diff --name-only "$BASE_SHA" HEAD -- 'models/*.yaml' 'models/*.yml' | tr '\n' ' ' | xargs)
+            echo "Scanning: $TARGET"
           else
             BASE_SHA="$(git rev-parse HEAD~1 2>/dev/null || git rev-list --max-parents=0 HEAD)"
-            FILES=$(git diff --name-only "$BASE_SHA" HEAD -- 'models/*.yaml' 'models/*.yml' | tr '\n' ' ' | xargs)
-            echo "mode=file" >> "$GITHUB_OUTPUT"
-            echo "target=$FILES" >> "$GITHUB_OUTPUT"
-            echo "Scanning: $FILES"
+            MODE="file"
+            TARGET=$(git diff --name-only "$BASE_SHA" HEAD -- 'models/*.yaml' 'models/*.yml' | tr '\n' ' ' | xargs)
+            echo "Scanning: $TARGET"
           fi
 
-          # also expose files for the registry job (only relevant in file mode)
-          echo "files=${{ github.event.inputs.model }}" >> "$GITHUB_OUTPUT"
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+          # also expose files for the registry job (only the local yaml files we scanned)
+          if [ "$MODE" = "file" ]; then
+            echo "files=$TARGET" >> "$GITHUB_OUTPUT"
+          else
+            echo "files=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run AIRS model security scan
         run: |
