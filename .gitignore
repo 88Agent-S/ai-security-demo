@@ -8,9 +8,13 @@ backend/.env
 frontend/node_modules/
 frontend/dist/
 
-# Environment files
+# Environment files (incl. backups — may contain real secrets)
 .env
 .env.local
+.env.*
+backend/.env.*
+!.env.example
+!backend/.env.example
 
 # macOS
 .DS_Store
