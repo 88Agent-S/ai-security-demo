@@ -232,6 +232,14 @@ body {
   background: #68d391;
 }
 
+.airs-toggle-wrap.disabled {
+  opacity: 0.4;
+}
+
+.airs-toggle:disabled {
+  cursor: not-allowed;
+}
+
 .airs-result {
   display: flex;
   flex-direction: column;
