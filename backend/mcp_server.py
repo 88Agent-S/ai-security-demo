@@ -3,6 +3,7 @@ import json
 import httpx
 from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
+from urllib.parse import urlparse
 
 mcp = FastMCP("security-tools", host="127.0.0.1", port=3001)
 
@@ -12,37 +13,44 @@ ATTACK_TAXII = (
     "1f5ab827-3aba-4e41-be48-1e79f1df7e95/objects/"
 )
 
-ALLOWED_URLS = {
+_ALLOWED_HOSTS = {
     # Security / threat intel
-    "https://nvd.nist.gov",
-    "https://www.cisa.gov",
-    "https://attack.mitre.org",
-    "https://www.cve.org",
+    "nvd.nist.gov",
+    "www.cisa.gov",
+    "attack.mitre.org",
+    "www.cve.org",
     # Palo Alto Networks
-    "https://unit42.paloaltonetworks.com",
-    "https://docs.paloaltonetworks.com",
-    "https://live.paloaltonetworks.com",
-    "https://pan.dev",
+    "unit42.paloaltonetworks.com",
+    "docs.paloaltonetworks.com",
+    "live.paloaltonetworks.com",
+    "pan.dev",
     # CrowdStrike
-    "https://www.crowdstrike.com",
-    "https://developer.crowdstrike.com",
+    "www.crowdstrike.com",
+    "developer.crowdstrike.com",
     # Zscaler
-    "https://help.zscaler.com",
-    "https://automate.zscaler.com",
-    "https://www.zscaler.com",
+    "help.zscaler.com",
+    "automate.zscaler.com",
+    "www.zscaler.com",
     # Wiz
-    "https://wiz.readthedocs.io",
-    "https://www.wiz.io",
+    "wiz.readthedocs.io",
+    "www.wiz.io",
     # Microsoft
-    "https://learn.microsoft.com",
-    "https://microsoft.github.io",
+    "learn.microsoft.com",
+    "microsoft.github.io",
     # Google AI
-    "https://ai.google.dev",
+    "ai.google.dev",
 }
 
 
 def _is_allowed(url: str) -> bool:
-    return any(url.startswith(prefix) for prefix in ALLOWED_URLS)
+    try:
+        p = urlparse(url)
+        if p.scheme != "https":
+            return False
+        host = p.netloc.split(":")[0].lower()
+        return host in _ALLOWED_HOSTS
+    except Exception:
+        return False
 
 
 @mcp.tool()
