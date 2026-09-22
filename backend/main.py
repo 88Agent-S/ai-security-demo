@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -377,25 +378,44 @@ app.add_middleware(
 )
 
 
-_ALLOWED_IPS: set[str] = {
-    ip.strip()
-    for ip in os.getenv("ALLOWED_IPS", "").split(",")
-    if ip.strip()
-}
+def _parse_allowed_networks(raw: str) -> list:
+    """Parse ALLOWED_IPS into a list of ip_network objects (bare IPs become /32 or /128)."""
+    networks = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            logger.warning("Ignoring invalid ALLOWED_IPS entry: %s", entry)
+    return networks
+
+
+_ALLOWED_NETWORKS = _parse_allowed_networks(os.getenv("ALLOWED_IPS", ""))
+
+
+def _ip_allowed(client_ip: str) -> bool:
+    if client_ip in ("127.0.0.1", "::1"):
+        return True
+    try:
+        addr = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False
+    return any(addr in net for net in _ALLOWED_NETWORKS)
 
 
 @app.middleware("http")
 async def ip_allowlist(request: Request, call_next):
     if request.url.path == "/api/webhook/huggingface":
         return await call_next(request)
-    if _ALLOWED_IPS:
+    if _ALLOWED_NETWORKS:
         # CF-Connecting-IP is the real visitor IP when behind Cloudflare Tunnel
         client_ip = (
             request.headers.get("CF-Connecting-IP")
             or (request.client.host if request.client else "")
         )
-        # Always allow localhost
-        if client_ip not in ("127.0.0.1", "::1") and client_ip not in _ALLOWED_IPS:
+        if not _ip_allowed(client_ip):
             logger.warning("Blocked request from %s", client_ip)
             return JSONResponse(status_code=403, content={"error": "Access denied"})
     return await call_next(request)
@@ -487,6 +507,63 @@ async def health(request: Request):
     return {"status": "ok"}
 
 
+@app.get("/api/gateway/status")
+@limiter.limit("30/minute")
+async def gateway_status(request: Request):
+    """Report which Portkey routes are usable so the UI can disable broken combos.
+
+    The Ollama-via-Portkey route depends on OLLAMA_PUBLIC_URL (ngrok tunnel) being
+    reachable from Portkey's cloud — when it's offline that combo 502s, so the UI
+    greys out Portkey for the Local provider.
+    """
+    ollama_gateway_ok = False
+    if OLLAMA_PUBLIC_URL:
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(f"{OLLAMA_PUBLIC_URL}/api/version", timeout=5.0)
+                ollama_gateway_ok = r.status_code == 200 and "version" in r.text
+        except Exception:
+            ollama_gateway_ok = False
+    return {
+        "portkey_configured": bool(PORTKEY_API_KEY),
+        "ollama_gateway_ok": ollama_gateway_ok,
+        "groq_ok": _groq_available(),
+    }
+
+
+# How many scans to page through when building the Models panel.
+SCAN_HISTORY_LIMIT = 100
+
+# The demo models, keyed by the tail of their HuggingFace repo id. The frontend keys
+# its threat write-ups and icons off these short names, so they must stay stable.
+_DEMO_MODEL_NAMES = {
+    "ai-security-demo-clean": "clean",
+    "ai-security-demo-poisoned": "poisoned",
+    "ai-security-demo-pickle": "pickle-exploit",
+}
+
+
+def _demo_scan_name(scan, labels: dict) -> str | None:
+    """Short demo name for a scan, or None if it is not one of the demo models.
+
+    Prefers an explicit `demo` label, then falls back to the model URI. The URI
+    fallback matters because CI pipeline scans predate the labelling convention —
+    without it the panel renders empty.
+    """
+    demo = labels.get("demo")
+    if demo:
+        return demo
+    uri = scan.model_uri or ""
+    return _DEMO_MODEL_NAMES.get(uri.rstrip("/").split("/")[-1])
+
+
+def _demo_scan_source(scan, labels: dict) -> str:
+    """Where the scanned model came from — drives the HuggingFace badge in the UI."""
+    if "huggingface.co" in (scan.model_uri or ""):
+        return "huggingface"
+    return labels.get("source", "local")
+
+
 @app.get("/api/scan/models")
 @limiter.limit("10/minute")
 async def get_model_scans(request: Request):
@@ -494,15 +571,18 @@ async def get_model_scans(request: Request):
         return JSONResponse(status_code=503, content={"error": "Model security not configured"})
     try:
         client = ModelSecurityAPIClient(base_url=MODEL_SECURITY_API_ENDPOINT)
-        raw = dict(client.list_scans())
+        # Pull a deep page, not the default 10: scheduled runs rescan the clean model
+        # every 2 days, so the poisoned scan falls out of a short window and its card
+        # would silently vanish from the panel.
+        raw = dict(client.list_scans(limit=SCAN_HISTORY_LIMIT))
         scans = raw.get("scans", [])
 
         seen: dict = {}
         for s in scans:
             labels = {lbl.key: lbl.value for lbl in (s.labels or [])}
-            if labels.get("platform") != "macmini-hf":
+            name = _demo_scan_name(s, labels)
+            if name is None:
                 continue
-            name = labels.get("demo", s.model_uri.split("/")[-1] if s.model_uri else "unknown")
             if name not in seen or s.created_at > seen[name].created_at:
                 seen[name] = s
 
@@ -518,7 +598,7 @@ async def get_model_scans(request: Request):
                 "formats": s.model_formats or [],
                 "files_scanned": s.total_files_scanned,
                 "scanned_at": s.created_at.isoformat(),
-                "source": labels.get("source", "local"),
+                "source": _demo_scan_source(s, labels),
                 "model_uri": s.model_uri,
                 "labels": labels,
             })
