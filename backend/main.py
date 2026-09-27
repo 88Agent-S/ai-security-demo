@@ -393,6 +393,17 @@ def _parse_allowed_networks(raw: str) -> list:
 
 
 _ALLOWED_NETWORKS = _parse_allowed_networks(os.getenv("ALLOWED_IPS", ""))
+# Prisma AIRS AI Red Teaming scanner IPs — a scan sends hundreds of prompts, so they get a higher chat limit
+_REDTEAM_NETWORKS = _parse_allowed_networks(os.getenv("REDTEAM_IPS", ""))
+
+
+def _chat_rate_limit(key: str) -> str:
+    """slowapi limit provider: key is the client IP from get_remote_address."""
+    try:
+        addr = ipaddress.ip_address(key)
+    except ValueError:
+        return "20/minute"
+    return "300/minute" if any(addr in net for net in _REDTEAM_NETWORKS) else "20/minute"
 
 
 def _ip_allowed(client_ip: str) -> bool:
@@ -724,9 +735,10 @@ async def huggingface_webhook(request: Request):
 
 
 @app.post("/api/chat")
-@limiter.limit("20/minute")
+@limiter.limit(_chat_rate_limit)
 async def chat(request: Request, body: ChatRequest):
     prompt = body.messages[-1].content
+    logger.info("chat request — airs_enabled=%s gateway=%s provider=%s", body.airs_enabled, body.gateway_enabled, body.provider)
     airs_prompt_result = None
     airs_response_result = None
     tool_calls = None
@@ -766,12 +778,15 @@ async def chat(request: Request, body: ChatRequest):
                         threats = [label for key, label in threat_map.items() if pd.get(key)]
                 except Exception:
                     pass
+                block_text = (
+                    "[PRISMA AIRS BLOCKED] This prompt was blocked by Prisma AIRS.\n"
+                    f"Threat detected: {', '.join(threats) if threats else 'Policy violation'}"
+                )
                 return JSONResponse(status_code=200, content={
                     "role": "assistant",
-                    "content": (
-                        "[PRISMA AIRS BLOCKED] This prompt was blocked by Prisma AIRS.\n"
-                        f"Threat detected: {', '.join(threats) if threats else 'Policy violation'}"
-                    ),
+                    "content": block_text,
+                    # `output` mirrors `content` for API clients that expect a flat field (AIRS red teaming)
+                    "output": block_text,
                     "airs": {"prompt": {"status": "block", "threats": threats}, "response": None},
                     "tool_calls": None,
                     "gateway": True,
@@ -785,6 +800,7 @@ async def chat(request: Request, body: ChatRequest):
         return {
             "role": "assistant",
             "content": ai_response,
+            "output": ai_response,
             "tool_calls": tool_calls,
             "airs": {"prompt": {"status": "allow", "threats": []}, "response": None} if body.airs_enabled else None,
             "gateway": True,
@@ -792,6 +808,25 @@ async def chat(request: Request, body: ChatRequest):
             "model": body.model_override or PROVIDER_MODELS.get(body.provider, ATTACK_MODEL),
             "stats": None,
         }
+
+    # Direct path: pre-scan the prompt so AIRS blocks it before it reaches the model
+    if body.airs_enabled and PRISMA_AIRS_API_KEY:
+        raw = await scan_with_airs(prompt=prompt, response="")
+        airs_prompt_result = parse_airs_result(raw)
+        if airs_prompt_result.get("status") == "block":
+            threats = airs_prompt_result.get("threats", [])
+            block_text = (
+                "[PRISMA AIRS BLOCKED] This prompt was blocked before reaching the model.\n"
+                f"Threat detected: {', '.join(threats) if threats else 'Policy violation'}"
+            )
+            return {
+                "role": "assistant",
+                "content": block_text,
+                "output": block_text,
+                "tool_calls": None,
+                "airs": {"prompt": airs_prompt_result, "response": None},
+                "stats": None,
+            }
 
     try:
         if body.mode == "assistant" and mcp_tool_definitions:
@@ -823,6 +858,13 @@ async def chat(request: Request, body: ChatRequest):
     if body.airs_enabled and PRISMA_AIRS_API_KEY:
         raw = await scan_with_airs(prompt=prompt, response=ai_response)
         airs_response_result = parse_airs_result(raw)
+        # Non-streaming, so a blocked response can be withheld rather than just flagged
+        if airs_response_result.get("status") == "block":
+            threats = airs_response_result.get("threats", [])
+            ai_response = (
+                "[PRISMA AIRS BLOCKED] The model's response was blocked by Prisma AIRS.\n"
+                f"Threat detected: {', '.join(threats) if threats else 'Policy violation'}"
+            )
 
     stats = None
     if data:
@@ -837,10 +879,50 @@ async def chat(request: Request, body: ChatRequest):
     return {
         "role": "assistant",
         "content": ai_response,
+        "output": ai_response,
         "tool_calls": tool_calls,
         "airs": {"prompt": airs_prompt_result, "response": airs_response_result} if body.airs_enabled else None,
         "stats": stats,
     }
+
+
+# ── Red team endpoint ──────────────────────────────────────────────────────────
+
+class RedTeamRequest(BaseModel):
+    """Flat request/response shape for Prisma AIRS AI Red Teaming targets."""
+    input: str
+    airs_enabled: bool = False
+    mode: str = "attack"
+
+    @field_validator("input")
+    @classmethod
+    def validate_input(cls, v):
+        if not v.strip():
+            raise ValueError("input cannot be empty")
+        if len(v) > MAX_INPUT_LENGTH:
+            raise ValueError(f"input exceeds {MAX_INPUT_LENGTH} characters")
+        return v
+
+
+@app.post("/api/redteam")
+@limiter.limit(_chat_rate_limit)
+async def redteam(request: Request, body: RedTeamRequest):
+    """Wraps /api/chat so the scanner gets a single top-level `output` string."""
+    chat_body = ChatRequest(
+        messages=[ChatMessage(role="user", content=body.input)],
+        airs_enabled=body.airs_enabled,
+        mode=body.mode,
+    )
+    result = await chat(request=request, body=chat_body)
+
+    if isinstance(result, JSONResponse):
+        payload = json.loads(bytes(result.body))
+        return JSONResponse(
+            status_code=result.status_code,
+            content={"output": payload.get("content") or payload.get("error", ""), "airs": payload.get("airs")},
+        )
+
+    return {"output": result["content"], "airs": result["airs"]}
 
 
 # ── SSE streaming endpoint ─────────────────────────────────────────────────────
