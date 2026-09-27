@@ -12,6 +12,7 @@ Usage:
 
 import glob
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -90,9 +91,12 @@ def register_model(api: HfApi, config_file: str) -> bool:
             with open(existing) as f:
                 readme_content = f.read()
 
-            # Remove any previous approval block to avoid duplication
+            # Remove any previous approval block to avoid duplication. The block
+            # starts with a `---` separator, so strip trailing separators too —
+            # otherwise every run leaves another orphan behind.
             if "## ✅ Prisma AIRS Security Approval" in readme_content:
-                readme_content = readme_content.split("## ✅ Prisma AIRS Security Approval")[0].rstrip()
+                readme_content = readme_content.split("## ✅ Prisma AIRS Security Approval")[0]
+            readme_content = re.sub(r"(\s*-{3,}\s*)+$", "", readme_content)
 
             updated_readme = readme_content + "\n" + approval_text
         except Exception:
