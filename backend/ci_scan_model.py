@@ -14,6 +14,7 @@ Usage:
 import argparse
 import glob
 import os
+import logging
 import re
 import sys
 import time
@@ -27,6 +28,12 @@ load_dotenv()
 _tsg = os.getenv("MODEL_SECURITY_TSG_ID")
 if _tsg:
     os.environ.setdefault("TSG_ID", _tsg)
+
+# The SDK logs "Scan completed with error" at ERROR level for any ERROR outcome,
+# including the transient "files pending scan data retrieval" state we retry below.
+# That reads as a failed scan in CI logs even when the model is ALLOWED, so quiet
+# the SDK logger — this script reports every real outcome itself.
+logging.getLogger("model_security_client").setLevel(logging.CRITICAL)
 
 try:
     from model_security_client.api import ModelSecurityAPIClient
