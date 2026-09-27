@@ -5,4 +5,4 @@ owner: "ml-platform-team"
 labels:
   environment: production
   use_case: customer_support
-  version: "v2"
+  version: "v3"
