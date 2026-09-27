@@ -11,7 +11,15 @@ load_dotenv()
 
 os.environ.setdefault("TSG_ID", os.getenv("MODEL_SECURITY_TSG_ID", ""))
 
-HF_GROUP_UUID = "f9b755b6-879e-468b-8de6-74e8f00f5650"  # Default HUGGING_FACE group
+# Read from env: this moved when model scanning migrated to the new SCM tenant, and a
+# stale hardcoded UUID silently scans against a group that no longer exists.
+HF_GROUP_UUID = os.getenv("MODEL_SECURITY_HF_GROUP_UUID") or os.getenv(
+    "MODEL_SECURITY_GROUP_UUID", ""
+)
+if not HF_GROUP_UUID:
+    raise SystemExit(
+        "ERROR: set MODEL_SECURITY_HF_GROUP_UUID (or MODEL_SECURITY_GROUP_UUID) in .env"
+    )
 
 MODELS = [
     {

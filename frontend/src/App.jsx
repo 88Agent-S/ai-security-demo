@@ -103,6 +103,7 @@ function App() {
   const [expandedStats, setExpandedStats] = useState({})
   const [airsEnabled, setAirsEnabled] = useState(false)
   const [gatewayEnabled, setGatewayEnabled] = useState(false)
+  const [ollamaGatewayOk, setOllamaGatewayOk] = useState(true)
   const [provider, setProvider] = useState('ollama')
   const [groqModel, setGroqModel] = useState('llama-3.1-8b-instant')
   const [mode, setMode] = useState('attack')
@@ -125,6 +126,15 @@ function App() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Probe Portkey routes on load — used to grey out Portkey for Local when the
+  // Ollama tunnel (ngrok) is offline, which would otherwise 502 as a gateway error.
+  useEffect(() => {
+    fetch(`${API_BASE}/api/gateway/status`)
+      .then(res => res.json())
+      .then(data => setOllamaGatewayOk(data.ollama_gateway_ok !== false))
+      .catch(() => setOllamaGatewayOk(false))
+  }, [])
 
   useEffect(() => {
     if (leftPanel === 'models' && modelScans.length === 0 && !modelScansLoading) {
@@ -352,7 +362,7 @@ function App() {
         <div className="mode-toggle-wrap">
           <button
             className={`mode-btn ${provider === 'ollama' ? 'active' : ''}`}
-            onClick={() => { setProvider('ollama'); setMessages([]) }}
+            onClick={() => { setProvider('ollama'); if (!ollamaGatewayOk) setGatewayEnabled(false); setMessages([]) }}
           >LOCAL</button>
           <button
             className={`mode-btn ${provider === 'groq' ? 'active groq' : ''}`}
@@ -372,14 +382,17 @@ function App() {
             ))}
           </select>
         )}
-        <div className="airs-toggle-wrap">
+        <div className={`airs-toggle-wrap ${provider === 'ollama' && !ollamaGatewayOk ? 'disabled' : ''}`}>
           <span className={`airs-label ${gatewayEnabled ? 'on' : 'off'}`}>
-            PORTKEY {gatewayEnabled ? 'ON' : 'OFF'}
+            PORTKEY {provider === 'ollama' && !ollamaGatewayOk ? 'N/A' : (gatewayEnabled ? 'ON' : 'OFF')}
           </span>
           <button
             className={`airs-toggle ${gatewayEnabled ? 'enabled' : ''}`}
             onClick={() => setGatewayEnabled(v => !v)}
-            title="Toggle Portkey AI Gateway"
+            disabled={provider === 'ollama' && !ollamaGatewayOk}
+            title={provider === 'ollama' && !ollamaGatewayOk
+              ? 'Portkey unavailable for Local — Ollama tunnel (ngrok) offline'
+              : 'Toggle Portkey AI Gateway'}
           >
             <span className="airs-knob" />
           </button>

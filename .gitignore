@@ -8,9 +8,13 @@ backend/.env
 frontend/node_modules/
 frontend/dist/
 
-# Environment files
+# Environment files (incl. backups — may contain real secrets)
 .env
 .env.local
+.env.*
+backend/.env.*
+!.env.example
+!backend/.env.example
 
 # macOS
 .DS_Store
@@ -23,3 +27,10 @@ frontend/dist/
 
 # Internal docs — never publish
 INTERNAL.md
+
+# Demo model artifacts — these are live attack payloads (pickle RCE) plus weights.
+# This repo is public, so the binaries stay local; the READMEs are kept as they
+# document the demo models on HuggingFace.
+backend/demo_models/**/*.pkl
+backend/demo_models/**/*.safetensors
+backend/demo_models/**/*.bin
